@@ -41,6 +41,7 @@ class ApiHandler(BaseHTTPRequestHandler):
                         "estado": "GET /estado (requiere x-api-key)",
                         "paso": "POST /paso (requiere x-api-key)",
                         "simularTurno": "POST /simular-turno (requiere x-api-key)",
+                        "escenario": "POST /escenario (ronda1, ronda2 o ronda3)",
                     },
                 },
             )
@@ -52,6 +53,19 @@ class ApiHandler(BaseHTTPRequestHandler):
             self._send(200, self.service.state())
 
     def do_POST(self) -> None:
+        if self.path == "/escenario":
+            if not self._authorized():
+                return
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                data = json.loads(self.rfile.read(length) or b"{}")
+                scenario = data["escenario"]
+                self.service.load_scenario(scenario)
+            except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+                self._send(400, {"error": "Escenario inválido"})
+                return
+            self._send(200, {"escenario": scenario, "turno": 0})
+            return
         if self.path == "/simular-turno":
             if not self._authorized():
                 return

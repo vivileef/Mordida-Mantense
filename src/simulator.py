@@ -23,11 +23,18 @@ class ApocalypseSimulator:
     def advance_turn(self) -> int:
         """Mueve amenazas, despierta dormidos y marca sobrevivientes mordidos."""
         self.world.turn += 1
+        self._apply_scheduled_events()
         self._move_zombies()
         self._wake_sleepers()
         self._refresh_horde_blocks()
         self._mark_bites()
         return self.world.turn
+
+    def _apply_scheduled_events(self) -> None:
+        for event in self.world.scheduled_events:
+            if event.turn == self.world.turn and event not in self.world.events:
+                self.block_edge(*event.edge)
+                self.world.events.append(event)
 
     def block_edge(self, source: str, target: str) -> None:
         """Registra un evento de ciudad que cierra una calle en ambos sentidos."""

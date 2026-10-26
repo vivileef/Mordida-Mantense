@@ -6,6 +6,7 @@ from threading import RLock
 from .graph import CityGraph
 from .model import Refuge, Survivor, WorldState, Zombie, ZombieType
 from .routing import shortest_safe_path
+from .scenarios import build_scenario
 from .simulator import ApocalypseSimulator
 from .turn_loop import TurnLoop
 
@@ -13,10 +14,14 @@ from .turn_loop import TurnLoop
 class RouteService:
     """Fachada del motor: coordina el grafo, el estado y el planificador."""
 
-    def __init__(self, graph: CityGraph | None = None) -> None:
+    def __init__(self, graph: CityGraph | None = None, scenario: str | None = None) -> None:
         # El grafo se inyecta para poder probar mapas alternativos sin cambiar el servicio.
         self.graph = graph or CityGraph.demo()
-        self.world = self._initial_world()
+        self.world = (
+            build_scenario(scenario, self.graph)
+            if scenario
+            else self._initial_world()
+        )
         self.world._graph = self.graph
         self.simulator = ApocalypseSimulator(self.graph, self.world)
         self.turn_loop = TurnLoop(self.simulate_turn)
@@ -79,6 +84,15 @@ class RouteService:
                 ],
                 "refugios": [asdict(refuge) for refuge in self.world.refuges.values()],
                 "aristasBloqueadas": [list(edge) for edge in self.world.blocked_edges],
+                "eventos": [
+                    {
+                        "turno": event.turn,
+                        "tipo": event.event_type,
+                        "arista": list(event.edge),
+                        "descripcion": event.description,
+                    }
+                    for event in self.world.events
+                ],
             }
 
     def simulate_turn(self, blocked_edge: tuple[str, str] | None = None) -> int:
@@ -87,6 +101,14 @@ class RouteService:
             if blocked_edge:
                 self.simulator.block_edge(*blocked_edge)
             return self.simulator.advance_turn()
+
+    def load_scenario(self, name: str) -> None:
+        """Reinicia el mundo con una ronda reproducible sin detener el reloj."""
+        with self._lock:
+            world = build_scenario(name, self.graph)
+            world._graph = self.graph
+            self.world = world
+            self.simulator = ApocalypseSimulator(self.graph, self.world)
 
     def start_turn_loop(self) -> None:
         """Activa el reloj de dos segundos usado por el servidor."""

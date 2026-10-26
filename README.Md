@@ -37,6 +37,8 @@ python -m unittest discover -s tests -v
   `{"siguienteNodo":"..."}`.
 - `POST /simular-turno`: avanza un turno del apocalipsis. Puede recibir
   `{"aristaBloqueada":["N-0013","N-0014"]}` para simular un cierre de calle.
+- `POST /escenario`: carga `ronda1`, `ronda2` o `ronda3` para reproducir la
+  prueba de fuego con 20, 80 o 200 sobrevivientes.
 - Todas las rutas requieren la cabecera `x-api-key`.
 - Si una ruta no es segura o no existe, el sobreviviente permanece en su nodo.
 
@@ -47,6 +49,15 @@ que consultar `/estado` no cambie el mundo accidentalmente.
 
 Al iniciar el servidor, un reloj interno avanza automáticamente el mundo cada
 dos segundos. El endpoint `/simular-turno` sigue disponible para pruebas manuales.
+
+Ejemplo para cargar la ronda 3:
+
+```powershell
+$headers = @{"x-api-key" = "clave-local"}
+Invoke-RestMethod -Method Post -Uri "http://localhost:8080/escenario" `
+  -Headers $headers -ContentType "application/json" `
+  -Body '{"escenario":"ronda3"}'
+```
 
 ## Primera versión y siguientes pasos
 

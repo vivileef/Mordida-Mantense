@@ -6,6 +6,7 @@ from src.graph import CityGraph
 from src.model import Zombie, ZombieType
 from src.simulator import ApocalypseSimulator
 from src.service import RouteService
+from src.scenarios import build_scenario
 from src.turn_loop import TurnLoop
 
 
@@ -100,6 +101,25 @@ class TurnLoopTests(unittest.TestCase):
         loop.start()
         self.assertIs(loop._thread, first_thread)
         loop.stop()
+
+
+class ScenarioTests(unittest.TestCase):
+    def test_fire_round_sizes(self) -> None:
+        self.assertEqual(len(build_scenario("ronda1").survivors), 20)
+        self.assertEqual(len(build_scenario("ronda2").survivors), 80)
+        self.assertEqual(len(build_scenario("ronda3").survivors), 200)
+
+    def test_round_three_applies_two_scheduled_events(self) -> None:
+        service = RouteService(scenario="ronda3")
+        for _ in range(20):
+            service.simulate_turn()
+        self.assertEqual(service.world.turn, 20)
+        self.assertEqual(len(service.world.events), 2)
+        self.assertEqual(len(service.world.blocked_edges), 2)
+
+    def test_unknown_scenario_is_rejected(self) -> None:
+        with self.assertRaises(ValueError):
+            build_scenario("ronda4")
 
 
 if __name__ == "__main__":

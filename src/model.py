@@ -52,6 +52,16 @@ class Refuge:
     capacity: int = 100
 
 
+@dataclass(frozen=True)
+class CityEvent:
+    """Cierre de una calle que se aplica automáticamente en un turno."""
+
+    turn: int
+    event_type: str
+    edge: tuple[str, str]
+    description: str
+
+
 @dataclass
 class WorldState:
     """Estado compartido que consultan el planificador y la API."""
@@ -61,6 +71,8 @@ class WorldState:
     zombies: dict[str, Zombie] = field(default_factory=dict)
     survivors: dict[str, Survivor] = field(default_factory=dict)
     refuges: dict[str, Refuge] = field(default_factory=dict)
+    scheduled_events: list[CityEvent] = field(default_factory=list)
+    events: list[CityEvent] = field(default_factory=list)
 
     def is_blocked(self, source: str, target: str) -> bool:
         # Las calles se consideran bloqueadas en ambas direcciones.
