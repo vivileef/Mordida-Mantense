@@ -1,78 +1,332 @@
 # Mordida Manta
 
-Motor inicial para el reto **Escape de Manta Zombie**. Esta versión implementa
-un grafo de ejemplo, rutas seguras con A*, estado del mundo y los endpoints
-requeridos por el simulador.
+Motor de simulación para **Escape de Manta Zombie (Track A)**. El proyecto
+modela un mapa como grafo, mueve zombies por turnos, registra eventos de ciudad,
+detecta mordidas y expone el estado del mundo para un simulador o un panel web.
 
-## Ejecutar localmente
+> **Estado actual:** MVP local del motor de simulación. La API y las pruebas
+> están listas para que el integrante 2 conecte el planificador de rutas y el
+> integrante 3 construya el frontend y el despliegue en AWS.
 
-Requiere Python 3.10 o superior. No necesita instalar dependencias:
+## Arquitectura actual
+
+```text
+Cliente / simulador / frontend
+              |
+              | HTTP + x-api-key
+              v
+        src/server.py
+              |
+              v
+        src/service.py
+          /           \
+         v             v
+  ApocalypseSimulator  A* routing
+  src/simulator.py     src/routing.py
+         |
+         v
+      WorldState
+      src/model.py
+         |
+         v
+      CityGraph
+      src/graph.py
+```
+
+El servidor usa un reloj interno que avanza un turno cada 2 segundos. El estado
+vive en memoria durante esta primera versión; al reiniciar el proceso se
+restaura el escenario inicial.
+
+## Requisitos
+
+- Python 3.10 o superior.
+- No se necesitan dependencias externas para ejecutar el MVP.
+
+## Instalación y ejecución
+
+Desde la raíz del repositorio:
 
 ```powershell
 $env:MANTA_API_KEY = "clave-local"
+$env:MANTA_RANDOM_SEED = "42"
 python -m src.server
 ```
 
-En otra terminal:
+El servidor queda disponible en:
+
+```text
+http://localhost:8080
+```
+
+El proceso avanza automáticamente un turno cada 2 segundos. Para detenerlo:
+
+```text
+Ctrl + C
+```
+
+## API
+
+Todas las rutas, excepto `/`, `/mapa` y la información de la raíz, requieren la
+cabecera:
+
+```text
+x-api-key: clave-local
+```
+
+### `GET /`
+
+Muestra las rutas disponibles:
 
 ```powershell
 curl.exe http://localhost:8080/
-curl.exe -H "x-api-key: clave-local" http://localhost:8080/estado
-curl.exe -X POST http://localhost:8080/paso `
-  -H "Content-Type: application/json" `
-  -H "x-api-key: clave-local" `
-  -d '{\"sobrevivienteId\":\"S-0001\",\"nodoActual\":\"N-0013\",\"turno\":0}'
 ```
 
+### `GET /estado`
+
+Devuelve el estado completo del mundo:
+
+```powershell
+curl.exe -H "x-api-key: clave-local" `
+  http://localhost:8080/estado
+```
+
+Incluye:
+
+- Turno actual.
+- Zombies, tipo, nodo y visibilidad.
+- Sobrevivientes, nodo actual, nodo anterior y estado activo.
+- Refugios.
+- Calles bloqueadas.
+- Eventos ocurridos.
+- Eventos programados.
+- Coordenadas de los nodos.
+
+### `POST /paso`
+
+Recibe una petición de ruta y devuelve únicamente el siguiente nodo:
+
+```powershell
+$headers = @{ "x-api-key" = "clave-local" }
+$body = @{
+    sobrevivienteId = "S-0001"
+    nodoActual = "N-0013"
+    turno = 1
+} | ConvertTo-Json
+
+Invoke-RestMethod -Method Post `
+  -Uri "http://localhost:8080/paso" `
+  -Headers $headers `
+  -ContentType "application/json" `
+  -Body $body | ConvertTo-Json
+```
+
+Respuesta:
+
+```json
+{
+  "siguienteNodo": "N-0012"
+}
+```
+
+El resultado siempre debe ser un vecino por una calle abierta o el mismo nodo.
+
+### `POST /mover-sobreviviente`
+
+Confirma el movimiento que efectivamente realizó un sobreviviente. Este
+endpoint permite guardar `nodoAnterior` y detectar cruces con zombies:
+
+```powershell
+$body = @{
+    sobrevivienteId = "S-0001"
+    nodoDestino = "N-0014"
+} | ConvertTo-Json
+
+Invoke-RestMethod -Method Post `
+  -Uri "http://localhost:8080/mover-sobreviviente" `
+  -Headers $headers `
+  -ContentType "application/json" `
+  -Body $body | ConvertTo-Json
+```
+
+Devuelve `movido: false` si el destino no es vecino, la calle está bloqueada o
+el sobreviviente ya fue eliminado.
+
+### `POST /simular-turno`
+
+Avanza manualmente exactamente un turno. Es útil para pruebas; el servidor ya
+lo ejecuta automáticamente cada 2 segundos.
+
+```powershell
+Invoke-RestMethod -Method Post `
+  -Uri "http://localhost:8080/simular-turno" `
+  -Headers $headers `
+  -ContentType "application/json" `
+  -Body '{}'
+```
+
+También permite simular un cierre de calle:
+
+```powershell
+$body = @{
+    aristaBloqueada = @("N-0013", "N-0014")
+} | ConvertTo-Json
+
+Invoke-RestMethod -Method Post `
+  -Uri "http://localhost:8080/simular-turno" `
+  -Headers $headers `
+  -ContentType "application/json" `
+  -Body $body | ConvertTo-Json
+```
+
+### `POST /escenario`
+
+Carga uno de los escenarios de la prueba de fuego:
+
+| Escenario | Sobrevivientes | Amenazas | Eventos |
+|---|---:|---|---|
+| `ronda1` | 20 | Caminantes | Ninguno |
+| `ronda2` | 80 | Caminantes, corredores y hordas | Puente en turno 10 |
+| `ronda3` | 200 | Todos los tipos, incluidos dormidos | Puente en turno 10 y avenida en turno 20 |
+
+```powershell
+$body = @{ escenario = "ronda3" } | ConvertTo-Json
+
+Invoke-RestMethod -Method Post `
+  -Uri "http://localhost:8080/escenario" `
+  -Headers $headers `
+  -ContentType "application/json" `
+  -Body $body | ConvertTo-Json
+```
+
+### `GET /mapa`
+
+Devuelve el mapa en un formato que puede consumir Leaflet u otro frontend:
+
+```powershell
+curl.exe http://localhost:8080/mapa
+```
+
+La respuesta contiene:
+
+```json
+{
+  "nodos": [
+    {"id": "N-0001", "lat": -0.95, "lng": -80.72}
+  ],
+  "calles": [
+    {
+      "origen": "N-0001",
+      "destino": "N-0002",
+      "distancia_m": 100,
+      "tipo": "avenida"
+    }
+  ]
+}
+```
+
+## Reglas implementadas
+
+- **Caminante:** avanza una calle cada dos turnos.
+- **Corredor:** avanza hasta dos calles por turno y persigue sobrevivientes a
+  tres nodos o menos.
+- **Horda:** permanece en su nodo; su nodo y vecinos se consideran peligrosos
+  para el planificador.
+- **Dormido:** permanece invisible hasta que un sobreviviente se acerca a dos
+  nodos o menos; entonces despierta como caminante.
+- **Mordida:** ocurre si zombie y sobreviviente comparten nodo o se cruzan en
+  direcciones opuestas por la misma calle.
+- **Calle bloqueada:** se bloquea en ambos sentidos.
+- **Eventos:** se aplican automáticamente en el turno programado.
+
 ## Pruebas
+
+Ejecutar desde la raíz:
 
 ```powershell
 python -m unittest discover -s tests -v
 ```
 
-## Contrato
+La suite cubre:
 
-- `GET /estado`: devuelve turno, zombies, sobrevivientes, refugios y aristas bloqueadas.
-- `POST /paso`: recibe `sobrevivienteId`, `nodoActual` y `turno`; responde
-  `{"siguienteNodo":"..."}`.
-- `POST /simular-turno`: avanza un turno del apocalipsis. Puede recibir
-  `{"aristaBloqueada":["N-0013","N-0014"]}` para simular un cierre de calle.
-- `POST /escenario`: carga `ronda1`, `ronda2` o `ronda3` para reproducir la
-  prueba de fuego con 20, 80 o 200 sobrevivientes.
-- `POST /mover-sobreviviente`: confirma el movimiento ejecutado por el simulador
-  y permite detectar cruces entre zombie y sobreviviente.
-- `GET /mapa`: devuelve nodos con coordenadas y calles para el frontend.
-- Todas las rutas requieren la cabecera `x-api-key`.
-- Si una ruta no es segura o no existe, el sobreviviente permanece en su nodo.
+- Movimiento de los tipos de zombie.
+- Turnos automáticos.
+- Activación de dormidos.
+- Mordidas y cruces opuestos.
+- Validación de movimientos.
+- Bloqueos y eventos.
+- Escenarios de 20, 80 y 200 sobrevivientes.
+- Contrato de carga de mapas.
+- Estado para el frontend.
 
-El motor mueve caminantes cada dos turnos, corredores hasta dos calles por turno,
-despierta dormidos cuando se acercan sobrevivientes, registra bloqueos y marca
-sobrevivientes mordidos. El avance es explícito mediante `/simular-turno` para
-que consultar `/estado` no cambie el mundo accidentalmente.
+## Mapa y datos
 
-Al iniciar el servidor, un reloj interno avanza automáticamente el mundo cada
-dos segundos. El endpoint `/simular-turno` sigue disponible para pruebas manuales.
-El simulador de sobrevivientes debe registrar su movimiento con
-`RouteService.move_survivor`; así el motor puede detectar cruces opuestos en una
-misma calle.
+La primera versión usa una cuadrícula demo de 25 nodos. No representa todavía
+las calles reales de Manta. El formato para sustituirla por una exportación
+validada de OpenStreetMap está documentado en
+[data/README.md](data/README.md).
 
-Para repetir los movimientos de zombies en una demo, configura
-`$env:MANTA_RANDOM_SEED = "42"` antes de iniciar el servidor. El mapa actual es
-un fixture local con coordenadas demo; debe sustituirse por una exportación
-validada de OpenStreetMap antes de la entrega final.
+El cargador disponible es:
 
-Ejemplo para cargar la ronda 3:
+```python
+from src.graph import CityGraph
 
-```powershell
-$headers = @{"x-api-key" = "clave-local"}
-Invoke-RestMethod -Method Post -Uri "http://localhost:8080/escenario" `
-  -Headers $headers -ContentType "application/json" `
-  -Body '{"escenario":"ronda3"}'
+graph = CityGraph.from_dict(map_data)
 ```
 
-## Primera versión y siguientes pasos
+## Integración con el integrante 2
 
-El mapa actual es una cuadrícula de 25 nodos para validar el motor. El siguiente
-paso es conectar el simulador de turnos, persistir el estado en DynamoDB,
-reemplazar el grafo por datos de OpenStreetMap y publicar el frontend con
-Leaflet en S3/CloudFront.
+Flujo recomendado por turno:
+
+```text
+1. El motor de rutas llama POST /paso.
+2. Recibe siguienteNodo.
+3. Confirma el movimiento mediante move_survivor().
+4. El simulador conserva nodoAnterior y nodo actual.
+5. Se detectan mordidas y cruces.
+6. El frontend consulta GET /estado.
+```
+
+El servicio también expone directamente:
+
+```python
+service.move_survivor("S-0001", "N-0014")
+```
+
+## Estructura del proyecto
+
+```text
+README.Md
+data/
+  README.md
+src/
+  graph.py       # Grafo y carga/exportación del mapa
+  model.py       # Entidades y estado del mundo
+  routing.py     # A* y rutas seguras
+  scenarios.py   # Rondas 1, 2 y 3
+  server.py      # API HTTP
+  service.py     # Fachada del sistema
+  simulator.py   # Reglas y turnos del apocalipsis
+  turn_loop.py   # Reloj automático de 2 segundos
+tests/
+  test_routing.py
+```
+
+## Limitaciones actuales
+
+- El mapa todavía es un fixture de 25 nodos.
+- El estado todavía no está persistido en DynamoDB o Redis.
+- El backend todavía no está desplegado en AWS.
+- No hay frontend Leaflet publicado.
+- La API key es una variable de entorno local.
+- La capacidad de refugios y la flota de rescate son funcionalidades PRO
+  pendientes.
+
+## Próximos pasos del equipo
+
+1. Integrar el planificador avanzado y la caché de rutas.
+2. Sustituir el grafo demo por datos reales validados de OpenStreetMap.
+3. Construir el panel Leaflet.
+4. Ejecutar pruebas de carga con 20, 80 y 200 sobrevivientes.
+5. Desplegar API, estado y frontend en AWS.
+6. Agregar AWS Budget, CloudWatch, diagrama de arquitectura y declaración de
+   costos.
