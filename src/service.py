@@ -6,6 +6,7 @@ from threading import RLock
 from .graph import CityGraph
 from .model import Refuge, Survivor, WorldState, Zombie, ZombieType
 from .routing import shortest_safe_path
+from .simulator import ApocalypseSimulator
 
 
 class RouteService:
@@ -16,6 +17,7 @@ class RouteService:
         self.graph = graph or CityGraph.demo()
         self.world = self._initial_world()
         self.world._graph = self.graph
+        self.simulator = ApocalypseSimulator(self.graph, self.world)
         self._lock = RLock()
 
     def _initial_world(self) -> WorldState:
@@ -76,3 +78,10 @@ class RouteService:
                 "refugios": [asdict(refuge) for refuge in self.world.refuges.values()],
                 "aristasBloqueadas": [list(edge) for edge in self.world.blocked_edges],
             }
+
+    def simulate_turn(self, blocked_edge: tuple[str, str] | None = None) -> int:
+        """Avanza exactamente un turno, opcionalmente aplicando un cierre de calle."""
+        with self._lock:
+            if blocked_edge:
+                self.simulator.block_edge(*blocked_edge)
+            return self.simulator.advance_turn()

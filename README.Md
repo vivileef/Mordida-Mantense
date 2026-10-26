@@ -35,8 +35,15 @@ python -m unittest discover -s tests -v
 - `GET /estado`: devuelve turno, zombies, sobrevivientes, refugios y aristas bloqueadas.
 - `POST /paso`: recibe `sobrevivienteId`, `nodoActual` y `turno`; responde
   `{"siguienteNodo":"..."}`.
+- `POST /simular-turno`: avanza un turno del apocalipsis. Puede recibir
+  `{"aristaBloqueada":["N-0013","N-0014"]}` para simular un cierre de calle.
 - Todas las rutas requieren la cabecera `x-api-key`.
 - Si una ruta no es segura o no existe, el sobreviviente permanece en su nodo.
+
+El motor mueve caminantes cada dos turnos, corredores hasta dos calles por turno,
+despierta dormidos cuando se acercan sobrevivientes, registra bloqueos y marca
+sobrevivientes mordidos. El avance es explícito mediante `/simular-turno` para
+que consultar `/estado` no cambie el mundo accidentalmente.
 
 ## Primera versión y siguientes pasos
 

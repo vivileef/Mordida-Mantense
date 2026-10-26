@@ -40,6 +40,7 @@ class ApiHandler(BaseHTTPRequestHandler):
                     "endpoints": {
                         "estado": "GET /estado (requiere x-api-key)",
                         "paso": "POST /paso (requiere x-api-key)",
+                        "simularTurno": "POST /simular-turno (requiere x-api-key)",
                     },
                 },
             )
@@ -51,6 +52,22 @@ class ApiHandler(BaseHTTPRequestHandler):
             self._send(200, self.service.state())
 
     def do_POST(self) -> None:
+        if self.path == "/simular-turno":
+            if not self._authorized():
+                return
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                data = json.loads(self.rfile.read(length) or b"{}")
+                edge = data.get("aristaBloqueada")
+                blocked_edge = tuple(edge) if edge else None
+                if blocked_edge and len(blocked_edge) != 2:
+                    raise ValueError("aristaBloqueada debe tener dos nodos")
+            except (TypeError, ValueError, json.JSONDecodeError):
+                self._send(400, {"error": "Evento de turno inválido"})
+                return
+            turn = self.service.simulate_turn(blocked_edge)
+            self._send(200, {"turno": turn})
+            return
         if self.path != "/paso":
             self._send(404, {"error": "Ruta no encontrada"})
             return

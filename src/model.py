@@ -30,6 +30,7 @@ class Zombie:
     type: ZombieType
     node: str
     visible: bool = True
+    previous_node: str | None = None
 
 
 @dataclass
