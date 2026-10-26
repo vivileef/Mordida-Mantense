@@ -43,6 +43,26 @@ class RouteServiceTests(unittest.TestCase):
         self.assertIn("nodoAnterior", state["sobrevivientes"][0])
         self.assertEqual(len(state["nodos"]), 25)
 
+    def test_graph_can_load_frontend_map_contract(self) -> None:
+        graph = CityGraph.from_dict(
+            {
+                "nodos": [
+                    {"id": "A", "lat": 1, "lng": 2},
+                    {"id": "B", "lat": 3, "lng": 4},
+                ],
+                "calles": [
+                    {
+                        "origen": "A",
+                        "destino": "B",
+                        "distancia_m": 50,
+                        "tipo": "puente",
+                    }
+                ],
+            }
+        )
+        self.assertTrue(graph.has_edge("A", "B"))
+        self.assertEqual(graph.nodes["B"], (3.0, 4.0))
+
     def test_confirmed_move_updates_survivor_position(self) -> None:
         self.assertTrue(self.service.move_survivor("S-0001", "N-0014"))
         survivor = self.service.world.survivors["S-0001"]

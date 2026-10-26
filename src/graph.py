@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from math import hypot
+from typing import Any
 
 from .model import Edge
 
@@ -38,6 +39,25 @@ class CityGraph:
                 for edge in edges
             ],
         }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> CityGraph:
+        """Carga un mapa preparado desde el formato JSON documentado."""
+        nodes = {
+            item["id"]: (float(item["lat"]), float(item["lng"]))
+            for item in data["nodos"]
+        }
+        edges = {node: [] for node in nodes}
+        for item in data["calles"]:
+            source = item["origen"]
+            target = item["destino"]
+            edge = Edge(
+                target=target,
+                distance_m=float(item["distancia_m"]),
+                street_type=str(item["tipo"]),
+            )
+            edges[source].append(edge)
+        return cls(nodes, edges)
 
     def heuristic(self, source: str, target: str) -> float:
         # La distancia geográfica aproximada guía A* hacia el refugio.

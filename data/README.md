@@ -1,6 +1,8 @@
 # Datos del mapa
 
 El motor acepta cualquier mapa que construya un `CityGraph` con nodos y calles.
+`CityGraph.from_dict` carga directamente este formato y `CityGraph.as_dict`
+lo vuelve a exportar para el frontend.
 El archivo de mapa de producción debe generarse desde una exportación validada
 de OpenStreetMap de Manta y conservar este contrato:
 
