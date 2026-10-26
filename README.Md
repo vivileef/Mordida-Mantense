@@ -39,6 +39,9 @@ python -m unittest discover -s tests -v
   `{"aristaBloqueada":["N-0013","N-0014"]}` para simular un cierre de calle.
 - `POST /escenario`: carga `ronda1`, `ronda2` o `ronda3` para reproducir la
   prueba de fuego con 20, 80 o 200 sobrevivientes.
+- `POST /mover-sobreviviente`: confirma el movimiento ejecutado por el simulador
+  y permite detectar cruces entre zombie y sobreviviente.
+- `GET /mapa`: devuelve nodos con coordenadas y calles para el frontend.
 - Todas las rutas requieren la cabecera `x-api-key`.
 - Si una ruta no es segura o no existe, el sobreviviente permanece en su nodo.
 
@@ -52,6 +55,11 @@ dos segundos. El endpoint `/simular-turno` sigue disponible para pruebas manuale
 El simulador de sobrevivientes debe registrar su movimiento con
 `RouteService.move_survivor`; así el motor puede detectar cruces opuestos en una
 misma calle.
+
+Para repetir los movimientos de zombies en una demo, configura
+`$env:MANTA_RANDOM_SEED = "42"` antes de iniciar el servidor. El mapa actual es
+un fixture local con coordenadas demo; debe sustituirse por una exportación
+validada de OpenStreetMap antes de la entrega final.
 
 Ejemplo para cargar la ronda 3:
 

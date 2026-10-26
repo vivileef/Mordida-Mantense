@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import asdict
+import os
+import random
 from threading import RLock
 
 from .graph import CityGraph
@@ -23,7 +25,7 @@ class RouteService:
             else self._initial_world()
         )
         self.world._graph = self.graph
-        self.simulator = ApocalypseSimulator(self.graph, self.world)
+        self.simulator = self._new_simulator()
         self.turn_loop = TurnLoop(self.simulate_turn)
         self._lock = RLock()
 
@@ -59,6 +61,11 @@ class RouteService:
             # La respuesta del contrato es solo el siguiente nodo, no la ruta completa.
             return path[1] if path and len(path) > 1 else node
 
+    def _new_simulator(self) -> ApocalypseSimulator:
+        seed_value = os.environ.get("MANTA_RANDOM_SEED")
+        random_source = random.Random(int(seed_value)) if seed_value else None
+        return ApocalypseSimulator(self.graph, self.world, random_source)
+
     def state(self) -> dict:
         """Serializa el estado interno al formato público del simulador."""
         with self._lock:
@@ -77,6 +84,7 @@ class RouteService:
                     {
                         "id": survivor.id,
                         "nodo": survivor.node,
+                        "nodoAnterior": survivor.previous_node,
                         "refugioId": survivor.refuge_id,
                         "activo": survivor.active,
                     }
@@ -93,6 +101,17 @@ class RouteService:
                     }
                     for event in self.world.events
                 ],
+                "eventosProgramados": [
+                    {
+                        "turno": event.turn,
+                        "tipo": event.event_type,
+                        "arista": list(event.edge),
+                        "descripcion": event.description,
+                    }
+                    for event in self.world.scheduled_events
+                    if event not in self.world.events
+                ],
+                "nodos": self.graph.as_dict()["nodos"],
             }
 
     def simulate_turn(self, blocked_edge: tuple[str, str] | None = None) -> int:
@@ -113,7 +132,7 @@ class RouteService:
             world = build_scenario(name, self.graph)
             world._graph = self.graph
             self.world = world
-            self.simulator = ApocalypseSimulator(self.graph, self.world)
+            self.simulator = self._new_simulator()
 
     def start_turn_loop(self) -> None:
         """Activa el reloj de dos segundos usado por el servidor."""

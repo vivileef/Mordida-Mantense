@@ -20,6 +20,25 @@ class CityGraph:
     def has_edge(self, source: str, target: str) -> bool:
         return any(edge.target == target for edge in self.neighbors(source))
 
+    def as_dict(self) -> dict:
+        """Serializa nodos y calles para que el frontend pueda dibujar el mapa."""
+        return {
+            "nodos": [
+                {"id": node, "lat": coordinates[0], "lng": coordinates[1]}
+                for node, coordinates in self.nodes.items()
+            ],
+            "calles": [
+                {
+                    "origen": source,
+                    "destino": edge.target,
+                    "distancia_m": edge.distance_m,
+                    "tipo": edge.street_type,
+                }
+                for source, edges in self.edges.items()
+                for edge in edges
+            ],
+        }
+
     def heuristic(self, source: str, target: str) -> float:
         # La distancia geográfica aproximada guía A* hacia el refugio.
         x1, y1 = self.nodes[source]

@@ -38,6 +38,17 @@ class RouteServiceTests(unittest.TestCase):
         """Una petición inválida no debe mover a otro sobreviviente."""
         self.assertEqual(self.service.next_step("S-9999", "N-0013", 0), "N-0013")
 
+    def test_state_exposes_previous_nodes_and_map_nodes(self) -> None:
+        state = self.service.state()
+        self.assertIn("nodoAnterior", state["sobrevivientes"][0])
+        self.assertEqual(len(state["nodos"]), 25)
+
+    def test_confirmed_move_updates_survivor_position(self) -> None:
+        self.assertTrue(self.service.move_survivor("S-0001", "N-0014"))
+        survivor = self.service.world.survivors["S-0001"]
+        self.assertEqual(survivor.node, "N-0014")
+        self.assertEqual(survivor.previous_node, "N-0013")
+
 
 class ApocalypseSimulatorTests(unittest.TestCase):
     def setUp(self) -> None:

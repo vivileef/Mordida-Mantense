@@ -42,9 +42,14 @@ class ApiHandler(BaseHTTPRequestHandler):
                         "paso": "POST /paso (requiere x-api-key)",
                         "simularTurno": "POST /simular-turno (requiere x-api-key)",
                         "escenario": "POST /escenario (ronda1, ronda2 o ronda3)",
+                        "moverSobreviviente": "POST /mover-sobreviviente (requiere x-api-key)",
+                        "mapa": "GET /mapa",
                     },
                 },
             )
+            return
+        if self.path == "/mapa":
+            self._send(200, self.service.graph.as_dict())
             return
         if self.path != "/estado":
             self._send(404, {"error": "Ruta no encontrada"})
@@ -53,6 +58,25 @@ class ApiHandler(BaseHTTPRequestHandler):
             self._send(200, self.service.state())
 
     def do_POST(self) -> None:
+        if self.path == "/mover-sobreviviente":
+            if not self._authorized():
+                return
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                data = json.loads(self.rfile.read(length) or b"{}")
+                survivor_id = data["sobrevivienteId"]
+                target = data["nodoDestino"]
+                if not isinstance(survivor_id, str) or not isinstance(target, str):
+                    raise ValueError("Identificadores inválidos")
+            except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+                self._send(400, {"error": "Movimiento inválido"})
+                return
+            moved = self.service.move_survivor(survivor_id, target)
+            self._send(
+                200 if moved else 409,
+                {"movido": moved, "nodo": target if moved else None},
+            )
+            return
         if self.path == "/escenario":
             if not self._authorized():
                 return
