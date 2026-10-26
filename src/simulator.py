@@ -22,12 +22,11 @@ class ApocalypseSimulator:
 
     def advance_turn(self) -> int:
         """Mueve amenazas, despierta dormidos y marca sobrevivientes mordidos."""
-        self._mark_bites()
+        self.world.turn += 1
         self._move_zombies()
         self._wake_sleepers()
         self._refresh_horde_blocks()
         self._mark_bites()
-        self.world.turn += 1
         return self.world.turn
 
     def block_edge(self, source: str, target: str) -> None:

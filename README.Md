@@ -45,6 +45,9 @@ despierta dormidos cuando se acercan sobrevivientes, registra bloqueos y marca
 sobrevivientes mordidos. El avance es explícito mediante `/simular-turno` para
 que consultar `/estado` no cambie el mundo accidentalmente.
 
+Al iniciar el servidor, un reloj interno avanza automáticamente el mundo cada
+dos segundos. El endpoint `/simular-turno` sigue disponible para pruebas manuales.
+
 ## Primera versión y siguientes pasos
 
 El mapa actual es una cuadrícula de 25 nodos para validar el motor. El siguiente

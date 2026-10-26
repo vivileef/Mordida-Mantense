@@ -98,8 +98,12 @@ def run() -> None:
         raise RuntimeError("Defina MANTA_API_KEY antes de iniciar el servidor")
     port = int(os.environ.get("PORT", "8080"))
     server = ThreadingHTTPServer(("0.0.0.0", port), ApiHandler)
+    ApiHandler.service.start_turn_loop()
     print(f"Mordida Manta escuchando en http://localhost:{port}")
-    server.serve_forever()
+    try:
+        server.serve_forever()
+    finally:
+        ApiHandler.service.stop_turn_loop()
 
 
 if __name__ == "__main__":

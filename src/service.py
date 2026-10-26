@@ -7,6 +7,7 @@ from .graph import CityGraph
 from .model import Refuge, Survivor, WorldState, Zombie, ZombieType
 from .routing import shortest_safe_path
 from .simulator import ApocalypseSimulator
+from .turn_loop import TurnLoop
 
 
 class RouteService:
@@ -18,6 +19,7 @@ class RouteService:
         self.world = self._initial_world()
         self.world._graph = self.graph
         self.simulator = ApocalypseSimulator(self.graph, self.world)
+        self.turn_loop = TurnLoop(self.simulate_turn)
         self._lock = RLock()
 
     def _initial_world(self) -> WorldState:
@@ -85,3 +87,11 @@ class RouteService:
             if blocked_edge:
                 self.simulator.block_edge(*blocked_edge)
             return self.simulator.advance_turn()
+
+    def start_turn_loop(self) -> None:
+        """Activa el reloj de dos segundos usado por el servidor."""
+        self.turn_loop.start()
+
+    def stop_turn_loop(self) -> None:
+        """Detiene el reloj para apagar el servidor sin dejar hilos vivos."""
+        self.turn_loop.stop()

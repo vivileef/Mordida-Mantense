@@ -1,10 +1,12 @@
 import unittest
 import random
+from threading import Event
 
 from src.graph import CityGraph
-from src.model import Survivor, Zombie, ZombieType
+from src.model import Zombie, ZombieType
 from src.simulator import ApocalypseSimulator
 from src.service import RouteService
+from src.turn_loop import TurnLoop
 
 
 class RouteServiceTests(unittest.TestCase):
@@ -44,11 +46,14 @@ class ApocalypseSimulatorTests(unittest.TestCase):
             self.graph, self.service.world, random.Random(4)
         )
 
-    def test_turn_moves_walker_and_increments_turn(self) -> None:
+    def test_walker_moves_only_on_even_turns(self) -> None:
         walker = self.service.world.zombies["Z-0001"]
         original = walker.node
         self.simulator.advance_turn()
         self.assertEqual(self.service.world.turn, 1)
+        self.assertEqual(walker.node, original)
+        self.simulator.advance_turn()
+        self.assertEqual(self.service.world.turn, 2)
         self.assertNotEqual(walker.node, original)
 
     def test_sleeper_wakes_near_survivor(self) -> None:
@@ -68,6 +73,33 @@ class ApocalypseSimulatorTests(unittest.TestCase):
     def test_city_event_blocks_an_edge(self) -> None:
         self.simulator.block_edge("N-0013", "N-0014")
         self.assertTrue(self.service.world.is_blocked("N-0014", "N-0013"))
+
+
+class TurnLoopTests(unittest.TestCase):
+    def test_loop_advances_until_stopped(self) -> None:
+        turns: list[int] = []
+        advanced = Event()
+
+        def advance() -> int:
+            turns.append(len(turns) + 1)
+            advanced.set()
+            return len(turns)
+
+        loop = TurnLoop(advance, 0.01)
+        loop.start()
+        self.assertTrue(loop.is_running())
+        self.assertTrue(advanced.wait(0.2))
+        loop.stop()
+        self.assertGreaterEqual(len(turns), 1)
+        self.assertFalse(loop.is_running())
+
+    def test_loop_does_not_start_twice(self) -> None:
+        loop = TurnLoop(lambda: 1, 0.1)
+        loop.start()
+        first_thread = loop._thread
+        loop.start()
+        self.assertIs(loop._thread, first_thread)
+        loop.stop()
 
 
 if __name__ == "__main__":
