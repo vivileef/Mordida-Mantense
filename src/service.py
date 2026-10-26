@@ -102,6 +102,11 @@ class RouteService:
                 self.simulator.block_edge(*blocked_edge)
             return self.simulator.advance_turn()
 
+    def move_survivor(self, survivor_id: str, target: str) -> bool:
+        """Registra el movimiento ejecutado por el simulador de sobrevivientes."""
+        with self._lock:
+            return self.simulator.move_survivor(survivor_id, target)
+
     def load_scenario(self, name: str) -> None:
         """Reinicia el mundo con una ronda reproducible sin detener el reloj."""
         with self._lock:

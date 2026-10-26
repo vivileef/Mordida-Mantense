@@ -41,6 +41,7 @@ class Survivor:
     node: str
     refuge_id: str
     active: bool = True
+    previous_node: str | None = None
 
 
 @dataclass(frozen=True)

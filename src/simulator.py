@@ -41,6 +41,20 @@ class ApocalypseSimulator:
         if self.graph.has_edge(source, target):
             self.world.blocked_edges.add((source, target))
 
+    def move_survivor(self, survivor_id: str, target: str) -> bool:
+        """Registra un movimiento ya decidido y valida que use una calle abierta."""
+        survivor = self.world.survivors.get(survivor_id)
+        if survivor is None or not survivor.active:
+            return False
+        if target != survivor.node and (
+            self.world.is_blocked(survivor.node, target)
+            or not self.graph.has_edge(survivor.node, target)
+        ):
+            return False
+        survivor.previous_node = survivor.node
+        survivor.node = target
+        return True
+
     def _move_zombies(self) -> None:
         for zombie in self.world.zombies.values():
             zombie.previous_node = zombie.node
@@ -131,9 +145,10 @@ class ApocalypseSimulator:
             )
             crossed_zombie = any(
                 zombie.visible
+                and survivor.previous_node is not None
+                and zombie.node == survivor.previous_node
                 and zombie.previous_node == survivor.node
-                and zombie.node != survivor.node
-                and self.graph.has_edge(zombie.node, survivor.node)
+                and zombie.node != zombie.previous_node
                 for zombie in self.world.zombies.values()
             )
             if shares_node or crossed_zombie:

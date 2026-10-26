@@ -75,6 +75,25 @@ class ApocalypseSimulatorTests(unittest.TestCase):
         self.simulator.block_edge("N-0013", "N-0014")
         self.assertTrue(self.service.world.is_blocked("N-0014", "N-0013"))
 
+    def test_opposite_crossing_marks_survivor_inactive(self) -> None:
+        survivor = self.service.world.survivors["S-0001"]
+        survivor.node = "N-0014"
+        survivor.previous_node = "N-0014"
+        self.service.world.zombies = {
+            "Z-001": Zombie(
+                "Z-001",
+                ZombieType.WALKER,
+                "N-0014",
+                previous_node="N-0013",
+            )
+        }
+        self.simulator.move_survivor("S-0001", "N-0013")
+        self.simulator._mark_bites()
+        self.assertFalse(survivor.active)
+
+    def test_survivor_move_rejects_non_neighbor(self) -> None:
+        self.assertFalse(self.simulator.move_survivor("S-0001", "N-0025"))
+
 
 class TurnLoopTests(unittest.TestCase):
     def test_loop_advances_until_stopped(self) -> None:

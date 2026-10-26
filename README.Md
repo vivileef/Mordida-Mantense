@@ -49,6 +49,9 @@ que consultar `/estado` no cambie el mundo accidentalmente.
 
 Al iniciar el servidor, un reloj interno avanza automáticamente el mundo cada
 dos segundos. El endpoint `/simular-turno` sigue disponible para pruebas manuales.
+El simulador de sobrevivientes debe registrar su movimiento con
+`RouteService.move_survivor`; así el motor puede detectar cruces opuestos en una
+misma calle.
 
 Ejemplo para cargar la ronda 3:
 
