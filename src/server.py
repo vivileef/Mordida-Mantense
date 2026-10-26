@@ -15,7 +15,7 @@ class ApiHandler(BaseHTTPRequestHandler):
 
     def _send(self, status: int, payload: dict) -> None:
         # Todas las respuestas usan JSON para que el simulador pueda consumirlas.
-        body = json.dumps(payload, ensure_ascii=False).encode()
+        body = json.dumps(payload, ensure_ascii=False, indent=2).encode()
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
