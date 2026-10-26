@@ -1,0 +1,13 @@
+:root {
+  font-family: "Segoe UI", Inter, ui-sans-serif, system-ui, sans-serif;
+  color: #e7eef0;
+  background: #090d12;
+  font-synthesis: none;
+}
+* { box-sizing: border-box; }
+body { margin: 0; min-width: 320px; background: #090d12; }
+button { font: inherit; cursor: pointer; }
+.button:focus-visible, button:focus-visible { outline: 2px solid #d87b32; outline-offset: 2px; }
+.loading-screen { min-height: 100vh; display: grid; place-content: center; justify-items: center; color: #92a4aa; }
+.loading-screen h1 { color: #e7eef0; font-size: 1.5rem; }
+.loading-screen .brand__mark { margin-bottom: 12px; }
