@@ -1,6 +1,6 @@
 # Mordida Mantense — frontend
 
-Proyecto de **Brujas de la Noche** para SpookyThon 2026, Track A: **Escape de Manta Zombie**.
+Proyecto de **Brujas de la Nube** para SpookyThon 2026, Track A: **Escape de Manta Zombie**.
 
 Centro de operaciones visual para el reto **Escape de Manta Zombie**. Está construido con React, Vite, Leaflet y React Leaflet. El modo inicial es `DEMO`: sus posiciones, rutas y eventos son ficticios y están marcados en la interfaz.
 
