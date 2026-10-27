@@ -1,3 +1,8 @@
 __pycache__/
 *.py[cod]
 .venv/
+
+# Frontend dependencies and generated output
+node_modules/
+dist/
+.vite/
