@@ -37,6 +37,179 @@ El servidor usa un reloj interno que avanza un turno cada 2 segundos. El estado
 vive en memoria durante esta primera versión; al reiniciar el proceso se
 restaura el escenario inicial.
 
+## Arquitectura del sistema
+
+Mordida Mantense está organizada en dos partes principales: el motor de
+simulación en Python y un frontend web independiente. El frontend presenta el
+estado del mundo, pero no reemplaza las reglas del simulador ni ejecuta
+automáticamente movimientos para todos los sobrevivientes.
+
+### Componentes
+
+- **Motor y API del simulador (`src/`) — implementado localmente.** `server.py`
+  expone la API HTTP; `service.py` coordina el estado, el grafo, el simulador y
+  el planificador; `model.py`, `graph.py`, `simulator.py` y `routing.py`
+  contienen las entidades y reglas del mundo.
+- **Frontend React + Vite (`frontend/`) — implementado localmente.** La
+  aplicación se inicia con Vite y está compuesta por paneles de estado,
+  estadísticas, eventos, rutas, controles y el mapa. El modo DEMO permite
+  presentar la interfaz sin depender del backend.
+- **Mapa Leaflet + OpenStreetMap — implementado en el frontend.**
+  `MantaMap.jsx` usa React Leaflet para dibujar nodos, calles, rutas, calles
+  bloqueadas, sobrevivientes, zombies y refugios. Las posiciones DEMO están
+  identificadas como ficticias.
+- **Conexión con la API (`frontend/src/services/simulatorApi.js`) —
+  preparada.** El módulo consulta `GET /estado` y `GET /mapa`, valida la
+  información que actualmente publica este repositorio y deja disponible
+  `POST /paso` para una solicitud explícita de siguiente nodo. El hook
+  `useWorldState.js` realiza polling configurable, evita solicitudes
+  simultáneas y conserva el último estado válido si la API falla.
+- **Endpoints del simulador — implementados en el backend local.**
+  `GET /estado` devuelve el estado público del mundo y `POST /paso` recibe
+  `sobrevivienteId`, `nodoActual` y `turno` para devolver `siguienteNodo`.
+  El frontend no invoca `POST /paso` masivamente; la estrategia de quién
+  solicita y confirma movimientos debe acordarse con el equipo del simulador.
+- **Alojamiento web en Amazon S3 y CloudFront — propuesto, no desplegado.**
+  El frontend Vite puede compilarse a `frontend/dist` y alojarse como sitio
+  estático en S3, opcionalmente distribuido mediante CloudFront. Todavía no
+  existe un bucket, una distribución ni una URL de despliegue documentada.
+- **Alojamiento del backend — pendiente de decisión.** El backend funciona
+  actualmente como servidor local. Aún debe decidirse si se desplegará en una
+  instancia, un servicio de contenedores, una función u otra arquitectura.
+  Este README no asume una plataforma ni un endpoint público.
+
+### Diagrama de arquitectura
+
+```mermaid
+flowchart LR
+    U[Usuario / navegador] --> F[Frontend React + Vite]
+    F --> D[Modo DEMO<br/>datos ficticios locales]
+    F --> M[React Leaflet<br/>OpenStreetMap]
+    F --> S[simulatorApi.js<br/>Fetch + polling]
+    S -->|GET /estado| A[API HTTP del simulador]
+    S -->|GET /mapa| A
+    S -.->|POST /paso<br/>acción explícita| A
+    A --> E[src/server.py]
+    E --> W[WorldState + simulador + rutas]
+    F -. compilación estática .-> B[S3<br/>alojamiento propuesto]
+    B -. distribución propuesta .-> C[CloudFront]
+    A -. alojamiento pendiente .-> H[Plataforma backend<br/>por decidir]
+```
+
+### Estado de implementación
+
+| Capacidad | Estado | Nota |
+|---|---|---|
+| Motor de simulación y reglas del mundo | Implementado localmente | Vive en `src/` y mantiene el estado en memoria. |
+| API `GET /estado`, `GET /mapa` y `POST /paso` | Implementada localmente | Requiere `x-api-key` en el servidor actual. |
+| Dashboard React + Vite | Implementado localmente | Incluye modo DEMO y modo API. |
+| Mapa interactivo | Implementado localmente | Usa React Leaflet y tiles de OpenStreetMap. |
+| Adaptador frontend de API | Preparado para integración | Lee variables `VITE_*`, valida respuestas y gestiona errores. |
+| WebSocket | Pendiente | El backend actual no publica un contrato WebSocket. |
+| S3 y CloudFront | Propuesto | Falta configurar y validar el despliegue. |
+| Alojamiento público del backend | Pendiente | La plataforma y la URL todavía no están definidas. |
+
+### Seguridad y configuración
+
+- No se deben publicar claves privadas ni credenciales de AWS en el frontend.
+- Las variables `VITE_*` son configuración que termina expuesta en el bundle;
+  por eso solo deben contener valores públicos, como una URL de API o un
+  intervalo de polling.
+- El servidor actual protege los endpoints privados con `x-api-key`; en un
+  despliegue real deberán definirse autenticación, autorización, CORS y
+  gestión segura de secretos en la capa del backend o gateway.
+- El navegador no debe asumir que DEMO equivale a una conexión real. La
+  interfaz mantiene estados separados para DEMO, API conectada y API
+  desconectada.
+
+### Presupuesto inicial de seguimiento
+
+El equipo usará **10 USD mensuales** como objetivo inicial de seguimiento para
+la conversación de infraestructura AWS. Este valor no es un límite de gasto,
+no constituye una estimación final y no confirma que exista un despliegue.
+Antes de habilitar servicios deberán revisarse los precios, regiones, uso
+esperado, alertas y controles de presupuesto de la cuenta.
+
+## Estimación de costes y plan de despliegue
+
+Esta sección describe candidatos y etapas de trabajo para la responsabilidad
+de AWS. **No hay servicios AWS desplegados ni compras realizadas desde este
+repositorio.** Los costes están **pendientes de calcular en [AWS Pricing
+Calculator](https://calculator.aws/)**; dependen de la región, configuración,
+tráfico, almacenamiento, solicitudes, tiempo de ejecución y tiempo activo.
+
+### Servicios candidatos
+
+| Servicio o tecnología | Función prevista | ¿Necesario para la primera demostración? | Factores que pueden generar costes | Estado actual |
+|---|---|---|---|---|
+| Amazon S3 + CloudFront | Alojar y distribuir los archivos estáticos generados por Vite (`frontend/dist`). | S3 puede ser suficiente para una primera publicación; CloudFront es opcional para la demostración inicial. | Almacenamiento en S3, solicitudes, transferencia de datos, distribución y solicitudes de CloudFront. **Pendiente de calcular en AWS Pricing Calculator.** | Propuesto; no hay bucket ni distribución creados. |
+| AWS Lambda + API Gateway | Alternativa para alojar la API si el backend se adapta a funciones y al contrato HTTP requerido. | No; la primera demostración puede ejecutarse en local con DEMO. | Invocaciones, duración y memoria de Lambda; solicitudes, transferencia y configuración de API Gateway. **Pendiente de calcular en AWS Pricing Calculator.** | Alternativa pendiente de decisión; no desplegado. |
+| Amazon DynamoDB | Persistir estados, eventos o configuraciones si el backend deja de usar memoria y necesita almacenamiento durable. | No para la primera demostración local. | Capacidad o solicitudes de lectura/escritura, almacenamiento, recuperación y transferencia. **Pendiente de calcular en AWS Pricing Calculator.** | Condicional; no desplegado. |
+| Amazon CloudWatch | Centralizar registros, métricas y alarmas del backend y de los servicios desplegados. | No para DEMO local; recomendable antes de una prueba desplegada. | Volumen de logs ingeridos y almacenados, métricas personalizadas, consultas y alarmas. **Pendiente de calcular en AWS Pricing Calculator.** | Propuesto; no configurado. |
+| AWS Budgets | Crear alertas de seguimiento de costes y revisar el consumo de la cuenta. | No es necesario para ejecutar la DEMO, pero debe configurarse antes de habilitar recursos AWS. | La configuración de alertas no sustituye el control de uso; los costes derivan de los servicios consumidos. **Pendiente de calcular en AWS Pricing Calculator.** | Objetivo de alerta documentado; no se confirma una alerta activa en una cuenta. |
+| Leaflet + OpenStreetMap | Mostrar el mapa interactivo en el navegador; no es un servicio AWS. | Sí, para la experiencia visual del mapa. | Leaflet no implica un servicio AWS; el uso de los tiles de OpenStreetMap está sujeto a sus políticas, atribución, capacidad y límites del proveedor. | Implementado en el frontend; no es un recurso AWS. |
+
+### Presupuesto de seguimiento
+
+Se registra como objetivo de seguimiento un presupuesto de **10 USD
+mensuales** para documentarlo en **AWS Budgets** cuando el equipo configure la
+cuenta. Es una **alerta de seguimiento, no un límite de gasto garantizado**:
+AWS no detendrá automáticamente todos los recursos al alcanzar esa cifra.
+Tampoco es una estimación final del coste ni confirma que AWS Budgets esté
+activo actualmente. Antes de crear recursos, una persona con acceso a la
+cuenta debe configurar la alerta, destinatarios y periodo de evaluación.
+
+### Plan de despliegue por etapas
+
+1. **Etapa 1: frontend local en modo DEMO.** Ejecutar React/Vite, verificar el
+   mapa, los indicadores y los eventos con datos ficticios claramente
+   identificados.
+2. **Etapa 2: validación de endpoints.** Revisar con la persona responsable del
+   backend el contrato y autenticación de `GET /estado`, `GET /mapa` y
+   `POST /paso`, incluyendo CORS, nombres de campos, coordenadas y estrategia
+   de solicitudes.
+3. **Etapa 3: publicación del frontend en AWS.** Generar `frontend/dist`,
+   configurar S3 y, si se aprueba, CloudFront. Validar rutas, HTTPS, caché y
+   variables públicas de build. Esta etapa todavía no se ha ejecutado.
+4. **Etapa 4: conexión con la API desplegada.** Configurar la URL acordada en
+   `VITE_API_BASE_URL`, probar el modo API, errores, timeout, polling y
+   autenticación sin incluir secretos en el bundle.
+5. **Etapa 5: pruebas de carga, latencia y supervivencia.** Ejecutar las
+   pruebas acordadas con los escenarios del hackathon (20, 80 y 200
+   sobrevivientes), medir resultados reales y observar el comportamiento del
+   backend y del frontend.
+6. **Etapa 6: revisión de costes y limpieza.** Revisar consumo y logs,
+   comparar con AWS Pricing Calculator, confirmar la alerta de AWS Budgets y
+   eliminar recursos temporales que ya no se necesiten.
+
+### Lista de verificación
+
+#### Antes del despliegue
+
+- [ ] Confirmar la cuenta, región y responsable de AWS.
+- [ ] Calcular escenarios de uso en [AWS Pricing
+      Calculator](https://calculator.aws/).
+- [ ] Configurar la alerta de seguimiento de 10 USD mensuales en AWS Budgets.
+- [ ] Confirmar el contrato, autenticación y CORS de la API.
+- [ ] Validar `VITE_API_BASE_URL` sin incluir claves privadas.
+- [ ] Ejecutar `npm run build` y revisar `frontend/dist`.
+- [ ] Comprobar el modo DEMO y la indicación de datos simulados.
+- [ ] Definir política de tiles, atribución y uso de OpenStreetMap.
+- [ ] Acordar cómo se observarán logs, errores y latencia.
+
+#### Después del despliegue
+
+- [ ] Confirmar que el frontend publicado carga por HTTPS.
+- [ ] Verificar que S3 y CloudFront sirven la versión esperada.
+- [ ] Probar la API desde el frontend con datos reales autorizados.
+- [ ] Confirmar que el estado DESCONECTADO conserva el último estado válido.
+- [ ] Revisar logs, errores, latencia y consumo observado.
+- [ ] Ejecutar los escenarios de carga acordados sin modificar las reglas del
+      simulador.
+- [ ] Revisar el presupuesto y sus notificaciones.
+- [ ] Eliminar buckets, distribuciones, funciones, tablas, logs u otros
+      recursos temporales que ya no sean necesarios.
+
 ## Requisitos
 
 - Python 3.10 o superior.
