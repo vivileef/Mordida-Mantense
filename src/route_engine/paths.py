@@ -2,9 +2,19 @@ from __future__ import annotations
 
 import heapq
 from itertools import count
+from math import isfinite
 
 from .hazards import dangerous_edges, dangerous_nodes
 from .types import GraphLike, WorldLike
+
+
+def _edge_distance(graph: GraphLike, source: str, target: str) -> float:
+    """Costo efectivo del tramo: Dijkstra puede escoger cualquier arista paralela."""
+    return min(edge.distance_m for edge in graph.neighbors(source) if edge.target == target)
+
+
+def _path_cost(graph: GraphLike, path: list[str] | tuple[str, ...]) -> float:
+    return sum(_edge_distance(graph, source, target) for source, target in zip(path, path[1:]))
 
 
 def shortest_safe_path(
@@ -15,6 +25,7 @@ def shortest_safe_path(
     *,
     horde_radius: int = 1,
     banned_edges: set[tuple[str, str]] | None = None,
+    banned_nodes: set[str] | None = None,
     danger: set[str] | None = None,
     frontal_edges: set[tuple[str, str]] | None = None,
 ) -> list[str] | None:
@@ -23,6 +34,9 @@ def shortest_safe_path(
         return None
     danger = set(danger) if danger is not None else dangerous_nodes(graph, world, horde_radius)
     danger.discard(start)
+    banned_nodes = banned_nodes or set()
+    if start in banned_nodes or goal in banned_nodes:
+        return None
     if goal in danger:
         return None
     frontal_edges = frontal_edges if frontal_edges is not None else dangerous_edges(world)
@@ -44,9 +58,15 @@ def shortest_safe_path(
             return path
         for edge in graph.neighbors(current):
             target = edge.target
+            if not isfinite(edge.distance_m) or edge.distance_m < 0:
+                raise ValueError(
+                    f"distancia_m inválida en {current}->{target}: "
+                    "Dijkstra requiere pesos finitos y no negativos"
+                )
             if (world.is_blocked(current, target)
                     or (current, target) in banned_edges
                     or (target, current) in frontal_edges
+                    or target in banned_nodes
                     or target in danger):
                 continue
             candidate = cost_so_far + edge.distance_m
@@ -66,22 +86,64 @@ def alternative_safe_paths(
     count_paths: int = 3,
     horde_radius: int = 1,
 ) -> list[list[str]]:
-    """Busca rutas distintas prohibiendo sucesivamente el primer tramo anterior."""
+    """Devuelve hasta k rutas seguras distintas usando la estrategia de Yen.
+
+    Si origen y destino coinciden, la única ruta es `[origen]`; no existen
+    alternativas distintas que devolver.
+    """
+    if count_paths <= 0 or start not in graph.nodes or goal not in graph.nodes:
+        return []
     danger = dangerous_nodes(graph, world, horde_radius)
     frontal = dangerous_edges(world)
-    paths: list[list[str]] = []
-    banned: set[tuple[str, str]] = set()
-    for _ in range(max(1, count_paths)):
-        path = shortest_safe_path(
-            graph, world, start, goal, horde_radius=horde_radius,
-            banned_edges=banned, danger=danger, frontal_edges=frontal,
-        )
-        if path is None:
+    first = shortest_safe_path(
+        graph, world, start, goal, horde_radius=horde_radius,
+        danger=danger, frontal_edges=frontal,
+    )
+    if first is None:
+        return []
+    if start == goal:
+        return [[start]]
+
+    accepted = [first]
+    accepted_keys = {tuple(first)}
+    candidates: list[tuple[float, int, tuple[str, ...]]] = []
+    candidate_keys: set[tuple[str, ...]] = set()
+    sequence = count()
+
+    while len(accepted) < count_paths:
+        previous = accepted[-1]
+        for spur_index in range(len(previous) - 1):
+            root = previous[:spur_index + 1]
+            root_key = tuple(root)
+            banned_edges = {
+                (path[spur_index], path[spur_index + 1])
+                for path in accepted
+                if len(path) > spur_index + 1 and tuple(path[:spur_index + 1]) == root_key
+            }
+            banned_nodes = set(root[:-1])
+            spur = shortest_safe_path(
+                graph, world, root[-1], goal, horde_radius=horde_radius,
+                banned_edges=banned_edges, banned_nodes=banned_nodes,
+                danger=danger, frontal_edges=frontal,
+            )
+            if spur is None:
+                continue
+            combined = tuple(root[:-1] + spur)
+            if combined in accepted_keys or combined in candidate_keys:
+                continue
+            # Yen's root is already safe; the spur search validates the rest.
+            # This guard prevents a repeated node if a zero-cost graph is supplied.
+            if len(set(combined)) != len(combined):
+                continue
+            candidate_keys.add(combined)
+            heapq.heappush(candidates, (_path_cost(graph, combined), next(sequence), combined))
+        if not candidates:
             break
-        paths.append(path)
-        if len(path) > 1:
-            banned.add((path[0], path[1]))
-    return paths
+        _, _, chosen = heapq.heappop(candidates)
+        candidate_keys.remove(chosen)
+        accepted.append(list(chosen))
+        accepted_keys.add(chosen)
+    return accepted
 
 
 def select_refuge_routes(
@@ -107,10 +169,7 @@ def select_refuge_routes(
         )
         if path is None:
             continue
-        distance = sum(
-            next(edge.distance_m for edge in graph.neighbors(a) if edge.target == b)
-            for a, b in zip(path, path[1:])
-        )
+        distance = _path_cost(graph, path)
         # El preferido solo resuelve empates; el criterio principal es distancia.
         candidates.append((distance, "" if refuge.id == preferred_refuge_id else refuge.id, refuge, path))
     if not candidates:

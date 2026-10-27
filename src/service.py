@@ -96,7 +96,10 @@ class RouteService:
             refuge = next((r for r in self.world.refuges.values() if r.node == primary[-1]), None)
             streets = []
             for a, b in zip(primary, primary[1:]):
-                edge = next(e for e in self.graph.neighbors(a) if e.target == b)
+                edge = min(
+                    (e for e in self.graph.neighbors(a) if e.target == b),
+                    key=lambda item: item.distance_m,
+                )
                 streets.append({"origen": a, "destino": b, "nombre": edge.name, "distancia_m": edge.distance_m, "tipo": edge.street_type})
             return {"sobrevivienteId": survivor_id, "refugioId": refuge.id if refuge else None,
                     "nodos": primary, "calles": streets,
