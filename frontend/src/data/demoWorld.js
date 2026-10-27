@@ -1,4 +1,4 @@
-const center = [-0.9536, -80.7089];
+const center = [-0.9677, -80.7089];
 
 const nodes = Array.from({ length: 25 }, (_, index) => {
   const row = Math.floor(index / 5);

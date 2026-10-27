@@ -1,17 +1,8 @@
-import { Circle, CircleMarker, MapContainer, Polyline, Popup, TileLayer, useMap } from 'react-leaflet';
-import { Fragment, useEffect, useState } from 'react';
+import { divIcon } from 'leaflet';
+import { Circle, MapContainer, Marker, Polyline, Popup, TileLayer, Tooltip, useMap } from 'react-leaflet';
+import { Fragment, useState } from 'react';
 import { center } from '../data/demoWorld';
 
-const colors = {
-  caminante: '#8fa19b',
-  walker: '#8fa19b',
-  corredor: '#ff6b35',
-  runner: '#ff6b35',
-  horda: '#c084fc',
-  horde: '#c084fc',
-  dormido: '#355c9b',
-  dormant: '#355c9b',
-};
 const labels = {
   caminante: 'Walker / Caminante',
   walker: 'Walker / Caminante',
@@ -22,18 +13,72 @@ const labels = {
   dormido: 'Dormant / Dormido',
   dormant: 'Dormant / Dormido',
 };
-function FitMap({ nodes }) {
+const iconShapes = {
+  survivor: '<circle cx="16" cy="8" r="3.5"/><path d="M10 24c.4-5 2.4-8 6-8s5.6 3 6 8M12 19h8M16 16v8"/>',
+  walker: '<ellipse cx="11" cy="20" rx="3" ry="5" transform="rotate(-25 11 20)"/><ellipse cx="21" cy="12" rx="3" ry="5" transform="rotate(-25 21 12)"/>',
+  runner: '<path d="m18 4 5 5-5 1 1 5-9 9 2-7-6-2 7-5z"/>',
+  horde: '<path d="M8 9c0-4 3-6 8-6s8 2 8 6v8c0 5-3 7-8 7s-8-2-8-7z"/><circle cx="13" cy="13" r="1.5"/><circle cx="19" cy="13" r="1.5"/><path d="M12 19c2 2 4 2 8 0M16 16v3"/>',
+  dormant: '<path d="M22 4a9 9 0 1 0 2 17A10 10 0 0 1 22 4Z"/><path d="M10 8h3M8 12h3"/>',
+  shelter: '<path d="m4 14 12-9 12 9v11H4z"/><path d="M12 25v-7h8v7M8 14h16"/>',
+  blocked: '<path d="M5 8h22M5 16h22M5 24h22M9 5v22M23 5v22"/>',
+};
+const iconColors = {
+  survivor: '#22E58B',
+  walker: '#FF9F1C',
+  runner: '#FF9F1C',
+  horde: '#8B5CF6',
+  dormant: '#F5C542',
+  shelter: '#22E58B',
+  blocked: '#FF9F1C',
+};
+function markerKind(type) {
+  const normalized = String(type || '').toLowerCase();
+  if (normalized === 'caminante' || normalized === 'walker') return 'walker';
+  if (normalized === 'corredor' || normalized === 'runner') return 'runner';
+  if (normalized === 'horda' || normalized === 'horde') return 'horde';
+  if (normalized === 'dormido' || normalized === 'dormant') return 'dormant';
+  return 'walker';
+}
+function entityIcon(kind, label) {
+  const color = iconColors[kind];
+  return divIcon({
+    className: 'entity-icon-wrapper',
+    html: `<span class="entity-icon entity-icon--${kind}" style="--marker-color:${color}" role="img" aria-label="${label}"><svg viewBox="0 0 32 32" aria-hidden="true" focusable="false">${iconShapes[kind]}</svg></span>`,
+    iconSize: [36, 36],
+    iconAnchor: [18, 18],
+    popupAnchor: [0, -18],
+  });
+}
+function RecenterMap() {
   const map = useMap();
-  useEffect(() => { if (nodes?.length) map.fitBounds(nodes.map((node) => [node.lat, node.lng]), { padding: [30, 30] }); }, [map, nodes]);
-  return null;
+  return <button className="map-recenter" type="button" onClick={() => map.setView(center, 14)}>Centrar Manta</button>;
 }
 function coordinates(world) {
   return new Map((world?.nodos || []).map((node) => [node.id, [node.lat, node.lng]]));
 }
-function lineFor(ids, nodeMap) {
-  return ids.map((id) => nodeMap.get(id)).filter(Boolean);
+function middleOf(path) {
+  if (path.length < 2) return path[0];
+  return [(path[0][0] + path[1][0]) / 2, (path[0][1] + path[1][1]) / 2];
 }
-export default function MantaMap({ world, selectedId, onSelect }) {
+function geometryToPositions(geometry) {
+  const coordinates = geometry?.coordinates || geometry;
+  if (!Array.isArray(coordinates)) return [];
+  const positions = coordinates.map((point) => {
+    if (Array.isArray(point) && point.length >= 2) {
+      return Array.isArray(geometry?.coordinates?.[0]) ? [point[1], point[0]] : [point[0], point[1]];
+    }
+    if (point && Number.isFinite(Number(point.lat)) && Number.isFinite(Number(point.lng))) return [Number(point.lat), Number(point.lng)];
+    return null;
+  }).filter(Boolean);
+  return positions.length > 1 ? positions : [];
+}
+function streetGeometry(street) {
+  return geometryToPositions(street.geometry || street.geometria || street.coordinates || street.coordenadas);
+}
+function routeGeometry(route) {
+  return geometryToPositions(route.geometry || route.geometria || route.coordinates || route.coordenadas);
+}
+export default function MantaMap({ world, selectedId, onSelect, mode = 'demo', connection = 'connecting', lastUpdated, stale = false, onRefreshMap }) {
   const [layers, setLayers] = useState({
     survivors: true,
     zombies: true,
@@ -42,9 +87,12 @@ export default function MantaMap({ world, selectedId, onSelect }) {
     routes: true,
   });
   const nodeMap = coordinates(world);
+  const hasStreetGeometry = (world?.calles || []).some((street) => streetGeometry(street).length > 1);
+  const hasRouteGeometry = (world?.rutas || []).some((route) => routeGeometry(route).length > 1);
   const toggleLayer = (layer) => setLayers((current) => ({ ...current, [layer]: !current[layer] }));
   return <section className="map-panel">
-    <div className="map-label"><span className="pulse" /> MAPA TÁCTICO · MANTA <small>POSICIONES DEMO</small></div>
+    <div className="map-label"><span className="pulse" /> MAPA TÁCTICO · MANTA <small>{mode === 'demo' ? 'POSICIONES DEMO' : connection === 'connected' ? 'DATOS DEL SERVIDOR' : 'DATOS API DESCONECTADOS'}{lastUpdated ? ` · ${lastUpdated.toLocaleTimeString('es-EC')}` : ''}{stale ? ' · DESACTUALIZADOS' : ''}</small></div>
+    {(!hasStreetGeometry || (layers.routes && !hasRouteGeometry)) && <div className="map-notice">{!hasStreetGeometry ? 'Calles del grafo sin geometría: se muestra el mapa OSM.' : 'Rutas sin geometría vial: trazado pendiente del backend.'}</div>}
     <div className="map-controls" aria-label="Capas del mapa">
       {[
         ['survivors', 'Sobrevivientes'],
@@ -59,35 +107,42 @@ export default function MantaMap({ world, selectedId, onSelect }) {
         aria-pressed={layers[layer]}
         onClick={() => toggleLayer(layer)}
       >{layers[layer] ? '●' : '○'} {label}</button>)}
+      {mode === 'api' && <button type="button" onClick={onRefreshMap} title="Actualizar el grafo de calles">↻ Mapa</button>}
     </div>
     <MapContainer center={center} zoom={14} scrollWheelZoom className="leaflet-map">
       <TileLayer attribution='&copy; OpenStreetMap contributors' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-      <FitMap nodes={world?.nodos} />
+      <RecenterMap />
       {(world?.calles || []).map((street, index) => {
-        const path = lineFor([street.origen, street.destino], nodeMap);
+        const path = streetGeometry(street);
         const blocked = (world.aristasBloqueadas || []).some((edge) => edge.includes(street.origen) && edge.includes(street.destino));
         if (blocked && !layers.blocked) return null;
-        return <Polyline key={`street-${index}`} positions={path} pathOptions={{ color: blocked ? '#ef4444' : '#26343d', weight: blocked ? 5 : 2, dashArray: blocked ? '8 8' : undefined, opacity: blocked ? 0.9 : 0.65 }} />;
+        if (!path.length) return null;
+        return <Fragment key={`street-${index}`}><Polyline positions={path} pathOptions={{ color: blocked ? '#FF9F1C' : '#3B2A6B', weight: blocked ? 5 : 2, dashArray: blocked ? '8 8' : undefined, opacity: blocked ? 0.95 : 0.75 }} />{blocked && path.length > 1 && <Marker position={middleOf(path)} icon={entityIcon('blocked', 'Calle bloqueada')}><Tooltip>Calle bloqueada</Tooltip><Popup><b>Calle bloqueada</b><br />Conexión: {street.origen} → {street.destino}<br />Estado: no disponible</Popup></Marker>}</Fragment>;
       })}
-      {layers.routes && (world?.rutas || []).map((route) => <Polyline key={`route-${route.survivorId}`} positions={lineFor(route.nodes, nodeMap)} pathOptions={{ color: route.survivorId === selectedId ? '#54d6df' : '#398b91', weight: route.survivorId === selectedId ? 5 : 3, dashArray: route.status === 'invalida' ? '5 8' : undefined }} />)}
+      {layers.routes && (world?.rutas || []).map((route) => {
+        const path = routeGeometry(route);
+        if (!path.length) return null;
+        const recommended = route.recomendada === true || route.segura === true || route.tipo === 'segura';
+        return <Polyline key={`route-${route.survivorId}`} positions={path} pathOptions={{ color: route.survivorId === selectedId ? '#8B5CF6' : recommended ? '#FF9F1C' : '#7B2CBF', weight: route.survivorId === selectedId ? 5 : 3, dashArray: route.status === 'invalida' ? '5 8' : undefined }} />;
+      })}
       {layers.zombies && (world?.zombies || []).filter((zombie) => zombie.visible !== false).map((zombie) => {
         const position = nodeMap.get(zombie.nodo);
         if (!position) return null;
         const type = String(zombie.tipo || '').toLowerCase();
-        const color = colors[type] || colors.caminante;
+        const kind = markerKind(type);
         const isHorde = type === 'horda' || type === 'horde';
-        return <Fragment key={zombie.id}>{isHorde && <Circle center={position} radius={260} pathOptions={{ color: '#9f3f32', fillColor: '#9f3f32', fillOpacity: 0.12, weight: 1, dashArray: '5 8' }} />}<CircleMarker center={position} radius={isHorde ? 15 : 8} pathOptions={{ color, fillColor: color, fillOpacity: 0.9, weight: 2 }}><Popup><b>{zombie.id}</b><br />Tipo: {labels[type] || zombie.tipo}<br />Nodo: {zombie.nodo}{zombie.cantidad ? <><br />Grupo: {zombie.cantidad}</> : null}</Popup></CircleMarker></Fragment>;
+        return <Fragment key={zombie.id}>{isHorde && <Circle center={position} radius={260} pathOptions={{ color: '#8B5CF6', fillColor: '#8B5CF6', fillOpacity: 0.12, weight: 1, dashArray: '5 8' }} />}<Marker position={position} icon={entityIcon(kind, labels[type] || zombie.tipo)}><Tooltip>{labels[type] || zombie.tipo}: {zombie.id}</Tooltip><Popup><b>{zombie.id}</b><br />Tipo: {labels[type] || zombie.tipo}<br />Ubicación: {zombie.nodo}{zombie.cantidad ? <><br />Grupo: {zombie.cantidad}</> : null}<br />Estado: {zombie.visible === false ? 'oculto' : 'detectado'}</Popup></Marker></Fragment>;
       })}
       {layers.survivors && (world?.sobrevivientes || []).map((survivor) => {
         const position = nodeMap.get(survivor.nodo);
         if (!position) return null;
-        return <CircleMarker center={position} radius={selectedId === survivor.id ? 9 : 7} pathOptions={{ color: '#061116', fillColor: survivor.activo ? '#54d6df' : '#7b8790', fillOpacity: 1, weight: 3 }} key={survivor.id} eventHandlers={{ click: () => onSelect(survivor.id) }}><Popup><b>{survivor.id}</b><br />Estado: {survivor.activo ? 'en camino' : 'eliminado'}<br />Nodo: {survivor.nodo}<br />Destino: {survivor.refugioId}</Popup></CircleMarker>;
+        return <Marker position={position} icon={entityIcon('survivor', 'Sobreviviente')} key={survivor.id} eventHandlers={{ click: () => onSelect(survivor.id) }}><Tooltip>Sobreviviente: {survivor.id}</Tooltip><Popup><b>{survivor.id}</b><br />Tipo: sobreviviente<br />Ubicación: {survivor.nodo}<br />Estado: {survivor.activo ? 'en camino' : 'eliminado'}<br />Destino: {survivor.refugioId}</Popup></Marker>;
       })}
       {layers.shelters && (world?.refugios || []).map((shelter) => {
         const position = nodeMap.get(shelter.nodo);
-        return position ? <CircleMarker center={position} radius={11} pathOptions={{ color: '#8be28b', fillColor: '#1e6b50', fillOpacity: 0.95, weight: 3 }} key={shelter.id}><Popup><b>⌂ {shelter.id}</b><br />Refugio disponible<br />Nodo: {shelter.nodo}</Popup></CircleMarker> : null;
+        return position ? <Marker position={position} icon={entityIcon('shelter', 'Refugio seguro')} key={shelter.id}><Tooltip>Refugio: {shelter.id}</Tooltip><Popup><b>{shelter.id}</b><br />Tipo: refugio seguro<br />Ubicación: {shelter.nodo}<br />Estado: disponible{ shelter.capacidad ? <><br />Capacidad: {shelter.capacidad}</> : null}</Popup></Marker> : null;
       })}
     </MapContainer>
-    <div className="map-legend"><span><i className="legend-dot legend-dot--survivor" /> Sobreviviente</span><span><i className="legend-dot legend-dot--walker" /> Walker</span><span><i className="legend-dot legend-dot--runner" /> Runner</span><span><i className="legend-dot legend-dot--horde" /> Horde</span><span><i className="legend-dot legend-dot--dormant" /> Dormant</span><span><i className="legend-dot legend-dot--shelter" /> Refugio</span><span><i className="legend-line" /> Calle bloqueada</span><span><i className="legend-route" /> Ruta de escape</span></div>
+    <div className="map-legend" aria-label="Leyenda de entidades del mapa"><span><i className="legend-symbol legend-symbol--survivor" aria-hidden="true" /> Sobreviviente</span><span><i className="legend-symbol legend-symbol--walker" aria-hidden="true" /> Caminante</span><span><i className="legend-symbol legend-symbol--runner" aria-hidden="true" /> Corredor</span><span><i className="legend-symbol legend-symbol--horde" aria-hidden="true" /> Horda</span><span><i className="legend-symbol legend-symbol--dormant" aria-hidden="true" /> Dormido</span><span><i className="legend-symbol legend-symbol--shelter" aria-hidden="true" /> Refugio</span><span><i className="legend-line" aria-hidden="true" /> Calle bloqueada</span><span><i className="legend-route legend-route--safe" aria-hidden="true" /> Ruta segura</span><span><i className="legend-route" aria-hidden="true" /> Ruta alternativa</span></div>
   </section>;
 }

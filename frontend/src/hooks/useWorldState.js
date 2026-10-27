@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { apiConfigured, fetchWorldState } from '../services/simulatorApi';
+import { apiConfigured, fetchMapState, fetchWorldState } from '../services/simulatorApi';
 import { createDemoService } from '../services/simulationService';
 
 const pollInterval = Number(import.meta.env.VITE_POLL_INTERVAL_MS) || 2000;
@@ -10,6 +10,7 @@ export function useWorldState({ demo = configuredMode === 'demo', paused = false
   const requestInFlight = useRef(false);
   const mounted = useRef(true);
   const activeSource = useRef(demo);
+  const mapRef = useRef(null);
   const [world, setWorld] = useState(null);
   const [connection, setConnection] = useState('connecting');
   const [error, setError] = useState('');
@@ -21,7 +22,7 @@ export function useWorldState({ demo = configuredMode === 'demo', paused = false
     try {
       const state = demo ? await demoService.current.advance() : await fetchWorldState();
       if (!mounted.current || activeSource.current !== demo) return;
-      setWorld(state);
+      setWorld(demo ? state : { ...state, ...(mapRef.current || {}) });
       setConnection('connected');
       setError('');
       setLastUpdated(new Date());
@@ -45,6 +46,26 @@ export function useWorldState({ demo = configuredMode === 'demo', paused = false
     }
   }, [demo]);
 
+  const refreshMap = useCallback(async () => {
+    if (demo || requestInFlight.current) return;
+    requestInFlight.current = true;
+    try {
+      const map = await fetchMapState();
+      if (!mounted.current || activeSource.current !== demo) return;
+      mapRef.current = map;
+      setWorld((current) => current ? { ...current, ...map } : current);
+      setLastUpdated(new Date());
+      setError('');
+    } catch (loadError) {
+      if (mounted.current) {
+        setConnection('error');
+        setError(loadError.message);
+      }
+    } finally {
+      requestInFlight.current = false;
+    }
+  }, [demo]);
+
   useEffect(() => {
     mounted.current = true;
     activeSource.current = demo;
@@ -54,7 +75,14 @@ export function useWorldState({ demo = configuredMode === 'demo', paused = false
       try {
         const state = demo ? await demoService.current.getState() : await fetchWorldState();
         if (!mounted.current) return;
-        setWorld(state);
+        if (!demo) {
+          const map = await fetchMapState();
+          if (!mounted.current) return;
+          mapRef.current = map;
+          setWorld({ ...state, ...map });
+        } else {
+          setWorld(state);
+        }
         setConnection('connected');
         setLastUpdated(new Date());
       } catch (loadError) {
@@ -66,7 +94,7 @@ export function useWorldState({ demo = configuredMode === 'demo', paused = false
       }
     };
     initialLoad();
-    return () => { mounted.current = false; };
+    return () => { mounted.current = false; mapRef.current = null; };
   }, [demo]);
 
   useEffect(() => {
@@ -82,6 +110,7 @@ export function useWorldState({ demo = configuredMode === 'demo', paused = false
     lastUpdated,
     reset,
     refresh: load,
+    refreshMap,
     pollInterval,
   };
 }

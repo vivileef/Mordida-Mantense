@@ -4,7 +4,7 @@ export default function SimulationControls({ mode, onModeChange, paused, onToggl
       <button className={mode === 'demo' ? 'is-active' : ''} onClick={() => onModeChange('demo')}>DEMO</button>
       <button className={mode === 'api' ? 'is-active' : ''} onClick={() => onModeChange('api')}>API REAL</button>
     </div></div>
-    <div className="control-strip__help">{mode === 'demo' ? 'Los movimientos son ficticios y se actualizan cada 2 s.' : 'Lectura periódica de GET /estado y GET /mapa.'}</div>
+    <div className="control-strip__help">{mode === 'demo' ? 'Los movimientos son ficticios y se actualizan cada 2 s.' : 'GET /estado se actualiza periódicamente; el mapa se conserva hasta refrescarlo.'}</div>
     <div className="control-strip__buttons">
       {mode === 'demo' && <button className="button button--primary" onClick={onTogglePause}>{paused ? 'Reanudar' : 'Pausar'}</button>}
       {mode === 'demo' && <button className="button button--secondary" onClick={onReset}>Reiniciar demo</button>}

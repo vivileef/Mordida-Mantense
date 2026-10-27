@@ -1,5 +1,4 @@
 const baseUrl = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
-const apiKey = import.meta.env.VITE_API_KEY || '';
 const requestTimeout = Number(import.meta.env.VITE_API_TIMEOUT_MS) || 5000;
 
 async function request(path, options = {}) {
@@ -15,7 +14,6 @@ async function request(path, options = {}) {
       signal: options.signal || controller.signal,
       headers: {
         Accept: 'application/json',
-        ...(apiKey ? { 'x-api-key': apiKey } : {}),
         ...options.headers,
       },
     });
@@ -53,7 +51,7 @@ async function request(path, options = {}) {
  * único punto que debe actualizarse antes de activar API REAL.
  */
 export async function fetchWorldState() {
-  const [world, map] = await Promise.all([request('/estado'), request('/mapa')]);
+  const world = await request('/estado');
 
   if (
     !world
@@ -64,6 +62,11 @@ export async function fetchWorldState() {
     throw new Error('GET /estado no tiene el formato esperado');
   }
 
+  return world;
+}
+
+export async function fetchMapState() {
+  const map = await request('/mapa');
   if (
     !map
     || typeof map !== 'object'
@@ -72,8 +75,7 @@ export async function fetchWorldState() {
   ) {
     throw new Error('GET /mapa no tiene el formato esperado');
   }
-
-  return { ...world, ...map };
+  return map;
 }
 
 /**
