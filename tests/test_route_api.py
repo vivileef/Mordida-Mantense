@@ -111,6 +111,25 @@ class RoutingBehaviorTests(unittest.TestCase):
         self.assertEqual(route["distancia_m"], 2)
         self.assertEqual(route["calles"][0]["nombre"], "corta")
 
+    def test_planned_routes_reports_cheapest_parallel_street(self):
+        nodes = {node: (0.0, 0.0) for node in ("S", "A", "G")}
+        edges = {node: [] for node in nodes}
+        edges["S"].extend([Edge("A", 10, "calle", "larga"), Edge("A", 1, "calle", "corta")])
+        edges["A"].append(Edge("G", 1, "calle", "final"))
+        graph = CityGraph(nodes, edges)
+        service = RouteService(graph)
+        service.world.survivors = {"S-TEST": Survivor("S-TEST", "S", "R-TEST")}
+        service.world.refuges = {"R-TEST": Refuge("R-TEST", "G")}
+        service.world.zombies = {}
+
+        planned = service.planned_routes()[0]
+
+        self.assertEqual(planned["nodos"], ["S", "A", "G"])
+        street_name = planned["calles"][0]["nombre"]
+        self.assertEqual(street_name, "corta")
+        selected_edge = next(edge for edge in graph.neighbors("S") if edge.name == street_name)
+        self.assertEqual(selected_edge.distance_m, 1)
+
     def test_alternative_search_returns_empty_when_no_route_exists(self):
         self.world.blocked_edges.update({("A", "B"), ("A", "C")})
         self.assertEqual(alternative_safe_paths(self.graph, self.world, "A", "D"), [])

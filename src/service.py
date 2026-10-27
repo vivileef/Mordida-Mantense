@@ -179,6 +179,17 @@ class RouteService:
             if not paths:
                 continue
             path = paths[0]
+            planned_streets = []
+            for source, target in zip(path, path[1:]):
+                edge = min(
+                    (edge for edge in self.graph.neighbors(source) if edge.target == target),
+                    key=lambda item: item.distance_m,
+                )
+                planned_streets.append({
+                    "origen": source,
+                    "destino": target,
+                    "nombre": edge.name,
+                })
             routes.append(
                 {
                     "sobrevivienteId": survivor.id,
@@ -186,18 +197,7 @@ class RouteService:
                     "nodos": path,
                     "nombresNodos": [self.graph.node_name(node) for node in path],
                     "distanciaNodos": len(path) - 1,
-                    "calles": [
-                        {
-                            "origen": path[index],
-                            "destino": path[index + 1],
-                            "nombre": next(
-                                edge.name
-                                for edge in self.graph.neighbors(path[index])
-                                if edge.target == path[index + 1]
-                            ),
-                        }
-                        for index in range(len(path) - 1)
-                    ],
+                    "calles": planned_streets,
                 }
             )
         return routes
