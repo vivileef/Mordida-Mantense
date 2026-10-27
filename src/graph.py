@@ -13,6 +13,7 @@ class CityGraph:
 
     nodes: dict[str, tuple[float, float]]
     edges: dict[str, list[Edge]]
+    node_names: dict[str, str] | None = None
 
     def neighbors(self, node: str) -> list[Edge]:
         # Un nodo desconocido no debe romper una petición de ruta.
@@ -25,7 +26,12 @@ class CityGraph:
         """Serializa nodos y calles para que el frontend pueda dibujar el mapa."""
         return {
             "nodos": [
-                {"id": node, "lat": coordinates[0], "lng": coordinates[1]}
+                {
+                    "id": node,
+                    "nombre": self.node_name(node),
+                    "lat": coordinates[0],
+                    "lng": coordinates[1],
+                }
                 for node, coordinates in self.nodes.items()
             ],
             "calles": [
@@ -34,11 +40,15 @@ class CityGraph:
                     "destino": edge.target,
                     "distancia_m": edge.distance_m,
                     "tipo": edge.street_type,
+                    "nombre": edge.name,
                 }
                 for source, edges in self.edges.items()
                 for edge in edges
             ],
         }
+
+    def node_name(self, node: str) -> str:
+        return (self.node_names or {}).get(node, f"Intersección {node}")
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> CityGraph:
@@ -46,6 +56,11 @@ class CityGraph:
         nodes = {
             item["id"]: (float(item["lat"]), float(item["lng"]))
             for item in data["nodos"]
+        }
+        node_names = {
+            item["id"]: item["nombre"]
+            for item in data["nodos"]
+            if item.get("nombre")
         }
         edges = {node: [] for node in nodes}
         for item in data["calles"]:
@@ -55,9 +70,10 @@ class CityGraph:
                 target=target,
                 distance_m=float(item["distancia_m"]),
                 street_type=str(item["tipo"]),
+                name=str(item.get("nombre", "calle sin nombre")),
             )
             edges[source].append(edge)
-        return cls(nodes, edges)
+        return cls(nodes, edges, node_names)
 
     def heuristic(self, source: str, target: str) -> float:
         # La distancia geográfica aproximada guía A* hacia el refugio.
@@ -80,8 +96,15 @@ class CityGraph:
         def connect(first: str, second: str, street_type: str = "calle") -> None:
             # La avenida del demo es más corta para representar una vía rápida.
             distance = 100 if street_type == "avenida" else 120
-            edges[first].append(Edge(second, distance, street_type))
-            edges[second].append(Edge(first, distance, street_type))
+            row = int(first[2:]) // width
+            column = int(first[2:]) % width
+            name = (
+                f"Av. 4 de Noviembre {row + 1}"
+                if street_type == "avenida"
+                else f"Calle {column + 1} de Manta"
+            )
+            edges[first].append(Edge(second, distance, street_type, name))
+            edges[second].append(Edge(first, distance, street_type, name))
 
         for row in range(width):
             for column in range(width):
@@ -90,4 +113,8 @@ class CityGraph:
                     connect(f"N-{number:04d}", f"N-{number + 1:04d}", "avenida")
                 if row < width - 1:
                     connect(f"N-{number:04d}", f"N-{number + width:04d}")
-        return cls(nodes, edges)
+        node_names = {
+            node: f"Intersección Av. {4 + index % 4} de Noviembre / Calle {1 + index // 5}"
+            for index, node in enumerate(nodes)
+        }
+        return cls(nodes, edges, node_names)

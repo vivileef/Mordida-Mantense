@@ -4,9 +4,8 @@ Motor de simulación para **Escape de Manta Zombie (Track A)**. El proyecto
 modela un mapa como grafo, mueve zombies por turnos, registra eventos de ciudad,
 detecta mordidas y expone el estado del mundo para un simulador o un panel web.
 
-> **Estado actual:** MVP local del motor de simulación. La API y las pruebas
-> están listas para que el integrante 2 conecte el planificador de rutas y el
-> integrante 3 construya el frontend y el despliegue en AWS.
+> **Estado actual:** MVP local con simulador y motor de rutas integrados. El
+> mapa de 25 nodos sigue siendo solo un fixture de desarrollo.
 
 ## Arquitectura actual
 
@@ -214,6 +213,10 @@ cuenta debe configurar la alerta, destinatarios y periodo de evaluación.
 
 - Python 3.10 o superior.
 - No se necesitan dependencias externas para ejecutar el MVP.
+- `MANTA_HORDE_RADIUS` configura el radio peligroso de las hordas en saltos
+  (por defecto `1`; use `0` para marcar solo el nodo de la horda).
+- `MANTA_CORS_ORIGIN` establece el origen permitido por CORS (por defecto `*`;
+  en despliegue se recomienda el dominio del frontend).
 
 ## Instalación y ejecución
 
@@ -239,8 +242,8 @@ Ctrl + C
 
 ## API
 
-Todas las rutas, excepto `/`, `/mapa` y la información de la raíz, requieren la
-cabecera:
+Las rutas protegidas requieren la cabecera; `/`, `/mapa` y `/salud` son
+públicas. Use:
 
 ```text
 x-api-key: clave-local
@@ -273,6 +276,7 @@ Incluye:
 - Eventos ocurridos.
 - Eventos programados.
 - Coordenadas de los nodos.
+- Rutas planificadas completas, con nombres de nodos y calles.
 
 ### `POST /paso`
 
@@ -397,19 +401,39 @@ La respuesta contiene:
 }
 ```
 
+### `GET /ruta/{sobrevivienteId}`
+
+Con `x-api-key`, devuelve la ruta completa segura, sus calles, distancia y
+rutas alternativas. Si el refugio asignado está bloqueado por peligro, el
+planificador elige el refugio alcanzable de menor distancia.
+
+### `GET /salud`
+
+Devuelve `{"estado":"ok","turno":...}` para comprobar que el backend
+responde. No revela la API key.
+
+La clave se mantiene exclusivamente en el backend. Un frontend desplegado no
+debe incluir `MANTA_API_KEY`; para una aplicación pública se necesita un
+backend intermediario o una estrategia de sesión antes de exponer rutas
+protegidas directamente al navegador.
+
 ## Reglas implementadas
 
 - **Caminante:** avanza una calle cada dos turnos.
 - **Corredor:** avanza hasta dos calles por turno y persigue sobrevivientes a
   tres nodos o menos.
-- **Horda:** permanece en su nodo; su nodo y vecinos se consideran peligrosos
-  para el planificador.
+- **Horda:** permanece en su nodo; `MANTA_HORDE_RADIUS` configura cuántos
+  saltos vecinos se consideran peligrosos (predeterminado: 1).
 - **Dormido:** permanece invisible hasta que un sobreviviente se acerca a dos
   nodos o menos; entonces despierta como caminante.
 - **Mordida:** ocurre si zombie y sobreviviente comparten nodo o se cruzan en
   direcciones opuestas por la misma calle.
 - **Calle bloqueada:** se bloquea en ambos sentidos.
 - **Eventos:** se aplican automáticamente en el turno programado.
+- **Rutas:** Dijkstra ponderado por distancia de calle, con alternativas y
+  caché invalidada por cambios de zombies y calles bloqueadas.
+- **Cruce frontal:** el planificador evita una calle si el último movimiento
+  visible de un zombie cruzó en sentido contrario.
 
 ## Pruebas
 
@@ -418,6 +442,17 @@ Ejecutar desde la raíz:
 ```powershell
 python -m unittest discover -s tests -v
 ```
+
+Ensayo de 200 solicitudes HTTP reales en un servidor local aislado:
+
+```powershell
+python scripts/load_test.py
+```
+
+El ensayo precalienta las cuatro combinaciones de refugio con el mismo origen
+y reporta ese tiempo aparte. Luego mide 200 llamadas con ocho clientes
+concurrentes. Ajuste la concurrencia con `MANTA_LOAD_WORKERS`. Imprime éxitos,
+errores, latencia media, p95 y máxima en milisegundos.
 
 La suite cubre:
 
@@ -437,6 +472,13 @@ La primera versión usa una cuadrícula demo de 25 nodos. No representa todavía
 las calles reales de Manta. El formato para sustituirla por una exportación
 validada de OpenStreetMap está documentado en
 [data/README.md](data/README.md).
+
+Los IDs `N-0001` y `N-0002` son identificadores técnicos. El estado y el mapa
+también exponen nombres legibles de intersecciones y calles, por ejemplo
+`Intersección Av. 4 de Noviembre / Calle 1` y `Av. 4 de Noviembre 1`. Al cargar
+datos reales, esos nombres deben venir de la exportación de OpenStreetMap.
+
+La regla de horda es configurable con `MANTA_HORDE_RADIUS`.
 
 El cargador disponible es:
 
@@ -474,7 +516,8 @@ data/
 src/
   graph.py       # Grafo y carga/exportación del mapa
   model.py       # Entidades y estado del mundo
-  routing.py     # A* y rutas seguras
+  routing.py     # Dijkstra, alternativas y seguridad de movimientos
+  cache.py       # Caché LRU de rutas por estado de peligro
   scenarios.py   # Rondas 1, 2 y 3
   server.py      # API HTTP
   service.py     # Fachada del sistema
@@ -496,10 +539,8 @@ tests/
 
 ## Próximos pasos del equipo
 
-1. Integrar el planificador avanzado y la caché de rutas.
-2. Sustituir el grafo demo por datos reales validados de OpenStreetMap.
-3. Construir el panel Leaflet.
-4. Ejecutar pruebas de carga con 20, 80 y 200 sobrevivientes.
-5. Desplegar API, estado y frontend en AWS.
-6. Agregar AWS Budget, CloudWatch, diagrama de arquitectura y declaración de
+1. Sustituir el grafo demo por datos reales validados de OpenStreetMap.
+2. Construir el panel Leaflet y conectarlo a `/mapa`, `/estado` y `/ruta/{id}`.
+3. Desplegar API, estado y frontend en AWS.
+4. Agregar AWS Budget, CloudWatch, diagrama de arquitectura y declaración de
    costos.
