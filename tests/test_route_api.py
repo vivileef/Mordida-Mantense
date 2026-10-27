@@ -4,6 +4,7 @@ import json
 import threading
 import unittest
 from http.server import ThreadingHTTPServer
+from unittest.mock import patch
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
@@ -173,6 +174,35 @@ class RoutingBehaviorTests(unittest.TestCase):
         self.assertEqual(paths[0][1], paths[1][1])
         self.assertNotEqual(paths[0], paths[1])
 
+    def test_alternatives_when_routes_share_two_initial_edges(self):
+        nodes = {node: (0.0, 0.0) for node in ("S", "A", "B", "X", "Y", "G")}
+        edges = {node: [] for node in nodes}
+        for source, target in (
+            ("S", "A"), ("A", "B"), ("B", "X"), ("X", "G"),
+            ("B", "Y"), ("Y", "G"),
+        ):
+            edges[source].append(Edge(target, 1, "calle"))
+        graph = CityGraph(nodes, edges)
+
+        paths = alternative_safe_paths(graph, self.world, "S", "G", count_paths=2)
+
+        self.assertEqual(
+            {tuple(path) for path in paths},
+            {
+                ("S", "A", "B", "X", "G"),
+                ("S", "A", "B", "Y", "G"),
+            },
+        )
+        self.assertEqual(paths[0][:3], paths[1][:3])
+        self.assertNotEqual(paths[0], paths[1])
+        for path in paths:
+            self.assertEqual(path[0], "S")
+            self.assertEqual(path[-1], "G")
+            for source, target in zip(path, path[1:]):
+                self.assertTrue(graph.has_edge(source, target))
+                self.assertFalse(self.world.is_blocked(source, target))
+                self.assertTrue(safe_step(graph, self.world, source, target))
+
     def test_origin_at_destination_returns_only_one_singleton_path(self):
         paths = alternative_safe_paths(self.graph, self.world, "D", "D", count_paths=3)
         self.assertEqual(paths, [["D"]])
@@ -243,6 +273,34 @@ class RoutingBehaviorTests(unittest.TestCase):
         service.world.blocked_edges.add(("A", "B"))
         blocked_route = service.routes_for("S")
         self.assertNotEqual(open_route, blocked_route)
+
+    def test_equivalent_route_query_reuses_cached_result(self):
+        service = RouteService(self.graph)
+        service.world.survivors = {"S": Survivor("S", "A", "R")}
+        service.world.refuges = self.world.refuges
+        service.world.zombies = {}
+
+        with patch("src.service.select_refuge_routes", wraps=select_refuge_routes) as planner:
+            first = service.routes_for("S")
+            second = service.routes_for("S")
+
+        self.assertEqual(first, second)
+        planner.assert_called_once()
+
+    def test_mutating_returned_routes_does_not_corrupt_cached_result(self):
+        service = RouteService(self.graph)
+        service.world.survivors = {"S": Survivor("S", "A", "R")}
+        service.world.refuges = self.world.refuges
+        service.world.zombies = {}
+
+        first = service.routes_for("S")
+        expected = [path.copy() for path in first]
+        first[0].append("NOT-A-REAL-NODE")
+        first.append(["CORRUPTED"])
+
+        second = service.routes_for("S")
+
+        self.assertEqual(second, expected)
 
 
 class ApiTests(unittest.TestCase):

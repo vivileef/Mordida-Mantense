@@ -78,13 +78,14 @@ class RouteService:
                    self.horde_radius, danger_signature(self.world))
             cached = self._route_cache.get(key)
             if cached is not None:
-                return cached
+                return [path.copy() for path in cached]
             result = select_refuge_routes(
                 self.graph, self.world, start, self.world.refuges.values(),
                 preferred_refuge_id=survivor.refuge_id, limit=limit,
                 horde_radius=self.horde_radius,
             )
-            return self._route_cache.put(key, result)
+            self._route_cache.put(key, result)
+            return [path.copy() for path in result]
 
     def route_details(self, survivor_id: str) -> dict | None:
         with self._lock:
