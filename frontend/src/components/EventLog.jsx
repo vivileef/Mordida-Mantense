@@ -1,4 +1,4 @@
-const icons = { peligro: '⚠', horda: '♛', calle: '╳', refugio: '⌂', sistema: '●' };
+const icons = { peligro: 'ALR', horda: 'HOR', calle: 'VIA', refugio: 'REF', sistema: 'SYS' };
 export default function EventLog({ events = [] }) {
   return <section className="panel event-panel"><div className="panel__heading"><h2>Registro de eventos</h2><span className="live-tag">● LIVE</span></div>
     <div className="event-list">{events.slice(0, 8).map((event, index) => <article className="event" key={`${event.turno}-${event.descripcion}-${index}`}>

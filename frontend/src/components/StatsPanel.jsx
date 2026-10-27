@@ -8,13 +8,15 @@ const statDefinitions = [
   ['Dormidos', 'sleepers', 'DOR', 'muted'],
   ['Refugios disponibles', 'shelters', 'REF', 'safe'],
   ['Calles bloqueadas', 'blocked', 'VIA', 'orange'],
+  ['Supervivencia estimada', 'survivalRate', '%', 'safe'],
 ];
 
 export function getStats(world) {
   const zombies = world?.zombies || [];
   const survivors = world?.sobrevivientes || [];
+  const activeSurvivors = survivors.filter((item) => item.activo).length;
   return {
-    survivors: survivors.filter((item) => item.activo).length,
+    survivors: activeSurvivors,
     lost: survivors.filter((item) => !item.activo).length,
     zombies: zombies.length,
     walkers: zombies.filter((item) => item.tipo === 'caminante').length,
@@ -23,6 +25,7 @@ export function getStats(world) {
     sleepers: zombies.filter((item) => item.tipo === 'dormido').length,
     shelters: (world?.refugios || []).length,
     blocked: (world?.aristasBloqueadas || []).length,
+    survivalRate: survivors.length ? Math.round((activeSurvivors / survivors.length) * 100) : 0,
   };
 }
 

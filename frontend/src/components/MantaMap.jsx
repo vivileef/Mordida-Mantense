@@ -1,5 +1,5 @@
-import { CircleMarker, MapContainer, Polyline, Popup, TileLayer, useMap } from 'react-leaflet';
-import { useEffect, useState } from 'react';
+import { Circle, CircleMarker, MapContainer, Polyline, Popup, TileLayer, useMap } from 'react-leaflet';
+import { Fragment, useEffect, useState } from 'react';
 import { center } from '../data/demoWorld';
 
 const colors = {
@@ -76,7 +76,7 @@ export default function MantaMap({ world, selectedId, onSelect }) {
         const type = String(zombie.tipo || '').toLowerCase();
         const color = colors[type] || colors.caminante;
         const isHorde = type === 'horda' || type === 'horde';
-        return <CircleMarker center={position} radius={isHorde ? 13 : 8} pathOptions={{ color, fillColor: color, fillOpacity: 0.88, weight: 2 }} key={zombie.id}><Popup><b>{zombie.id}</b><br />Tipo: {labels[type] || zombie.tipo}<br />Nodo: {zombie.nodo}{zombie.cantidad ? <><br />Grupo: {zombie.cantidad}</> : null}</Popup></CircleMarker>;
+        return <Fragment key={zombie.id}>{isHorde && <Circle center={position} radius={260} pathOptions={{ color: '#9f3f32', fillColor: '#9f3f32', fillOpacity: 0.12, weight: 1, dashArray: '5 8' }} />}<CircleMarker center={position} radius={isHorde ? 15 : 8} pathOptions={{ color, fillColor: color, fillOpacity: 0.9, weight: 2 }}><Popup><b>{zombie.id}</b><br />Tipo: {labels[type] || zombie.tipo}<br />Nodo: {zombie.nodo}{zombie.cantidad ? <><br />Grupo: {zombie.cantidad}</> : null}</Popup></CircleMarker></Fragment>;
       })}
       {layers.survivors && (world?.sobrevivientes || []).map((survivor) => {
         const position = nodeMap.get(survivor.nodo);

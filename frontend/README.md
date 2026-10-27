@@ -45,9 +45,11 @@ Edita `.env` (no se deben subir credenciales):
 VITE_API_BASE_URL=http://localhost:8080
 VITE_API_KEY=clave-local
 VITE_POLL_INTERVAL_MS=2000
+VITE_API_TIMEOUT_MS=5000
+VITE_DATA_MODE=demo
 ```
 
-Luego reinicia `npm run dev` y selecciona **API REAL**. El adaptador consulta `GET /estado` y `GET /mapa`, envía `x-api-key` cuando `VITE_API_KEY` existe, informa errores HTTP y reintenta la lectura periódicamente. La función `requestNextStep` deja preparado el contrato `POST /paso` para una acción explícita de planificación; no se llama para todos los sobrevivientes desde el navegador.
+Luego reinicia `npm run dev` y selecciona **API REAL**. `VITE_DATA_MODE=api` permite abrir directamente en modo API; el valor `demo` mantiene el modo DEMO por defecto. El adaptador consulta `GET /estado` y `GET /mapa`, envía `x-api-key` cuando `VITE_API_KEY` existe, aplica un timeout configurable, valida el JSON y reintenta la lectura periódicamente. Si una consulta falla, conserva el último estado válido y muestra el error. La función `requestNextStep` deja preparado el contrato `POST /paso` para una acción explícita de planificación; no se llama para todos los sobrevivientes desde el navegador.
 
 El backend de este repositorio se inicia desde la raíz con:
 
@@ -65,7 +67,7 @@ src/
   components/       # cabecera, mapa, estadísticas, rutas y eventos
   data/             # mundo DEMO aislado
   hooks/            # sincronización de estado y temporizadores
-  services/         # API HTTP y simulación DEMO
+  services/         # simulatorApi.js, compatibilidad API y simulación DEMO
   styles/           # estilos responsive
 ```
 
@@ -79,3 +81,7 @@ Después de validar localmente, sube el contenido de `dist` a un bucket S3 confi
 - El backend actual no expone WebSocket; por eso API REAL usa polling configurable.
 - El servidor local exige `x-api-key`; en un despliegue real se recomienda colocar autenticación y CORS en la capa de API/gateway.
 - Las rutas completas solo se muestran si el backend las incluye en el payload; `POST /paso` devuelve únicamente el siguiente nodo y no se invoca automáticamente desde el panel.
+
+### Información requerida del backend
+
+El adaptador principal está en `src/services/simulatorApi.js`. El frontend espera que `GET /estado` incluya al menos `turno`, `zombies`, `sobrevivientes`, `refugios`, `aristasBloqueadas`, `eventos` y `nodos`. Cada nodo debe tener `id`, `lat` y `lng`; cada zombie debe tener `id`, `tipo` y `nodo`; cada sobreviviente debe tener `id`, `nodo`, `refugioId` y `activo`. Además, `GET /mapa` debe incluir `nodos` y `calles` con `origen` y `destino`. Si el backend compartido utiliza otros nombres, el equipo debe acordar y completar el adaptador en ese archivo antes de activar API REAL.

@@ -8,7 +8,7 @@ import EventLog from './components/EventLog';
 import { useWorldState } from './hooks/useWorldState';
 
 export default function App() {
-  const [mode, setMode] = useState('demo');
+  const [mode, setMode] = useState(import.meta.env.VITE_DATA_MODE === 'api' ? 'api' : 'demo');
   const [paused, setPaused] = useState(false);
   const [selectedId, setSelectedId] = useState('S-0089');
   const [startedAt] = useState(Date.now());

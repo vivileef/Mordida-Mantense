@@ -16,6 +16,7 @@ export default function Header({ world, mode, connection, lastUpdated, paused, o
       </div>
       <div className="topbar__actions">
         <ConnectionStatus mode={mode} connection={connection} lastUpdated={lastUpdated} />
+        <div className="system-badge"><span /> {connection === 'connected' ? (mode === 'demo' ? 'DEMO' : 'OPERATIVO') : 'DESCONECTADO'}</div>
         {mode === 'demo' && <button className="button button--ghost" onClick={onTogglePause}>{paused ? 'Reanudar' : 'Pausar'}</button>}
         {mode === 'demo' && <button className="button button--ghost" onClick={onReset}>Reiniciar</button>}
       </div>
