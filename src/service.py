@@ -76,6 +76,7 @@ class RouteService:
                         "id": zombie.id,
                         "tipo": zombie.type.value,
                         "nodo": zombie.node,
+                        "nombreNodo": self.graph.node_name(zombie.node),
                         "visible": zombie.visible,
                     }
                     for zombie in self.world.zombies.values()
@@ -84,13 +85,20 @@ class RouteService:
                     {
                         "id": survivor.id,
                         "nodo": survivor.node,
+                        "nombreNodo": self.graph.node_name(survivor.node),
                         "nodoAnterior": survivor.previous_node,
                         "refugioId": survivor.refuge_id,
                         "activo": survivor.active,
                     }
                     for survivor in self.world.survivors.values()
                 ],
-                "refugios": [asdict(refuge) for refuge in self.world.refuges.values()],
+                "refugios": [
+                    {
+                        **asdict(refuge),
+                        "nombreNodo": self.graph.node_name(refuge.node),
+                    }
+                    for refuge in self.world.refuges.values()
+                ],
                 "aristasBloqueadas": [list(edge) for edge in self.world.blocked_edges],
                 "eventos": [
                     {
@@ -112,7 +120,43 @@ class RouteService:
                     if event not in self.world.events
                 ],
                 "nodos": self.graph.as_dict()["nodos"],
+                "rutas": self.planned_routes(),
             }
+
+    def planned_routes(self) -> list[dict]:
+        """Publica la ruta completa vigente de cada sobreviviente activo."""
+        routes = []
+        for survivor in self.world.survivors.values():
+            if not survivor.active:
+                continue
+            refuge = self.world.refuges[survivor.refuge_id]
+            path = shortest_safe_path(
+                self.graph, self.world, survivor.node, refuge.node
+            )
+            if not path:
+                continue
+            routes.append(
+                {
+                    "sobrevivienteId": survivor.id,
+                    "refugioId": refuge.id,
+                    "nodos": path,
+                    "nombresNodos": [self.graph.node_name(node) for node in path],
+                    "distanciaNodos": len(path) - 1,
+                    "calles": [
+                        {
+                            "origen": path[index],
+                            "destino": path[index + 1],
+                            "nombre": next(
+                                edge.name
+                                for edge in self.graph.neighbors(path[index])
+                                if edge.target == path[index + 1]
+                            ),
+                        }
+                        for index in range(len(path) - 1)
+                    ],
+                }
+            )
+        return routes
 
     def simulate_turn(self, blocked_edge: tuple[str, str] | None = None) -> int:
         """Avanza exactamente un turno, opcionalmente aplicando un cierre de calle."""

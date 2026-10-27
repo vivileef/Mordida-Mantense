@@ -100,6 +100,7 @@ Incluye:
 - Eventos ocurridos.
 - Eventos programados.
 - Coordenadas de los nodos.
+- Rutas planificadas completas, con nombres de nodos y calles.
 
 ### `POST /paso`
 
@@ -264,6 +265,16 @@ La primera versión usa una cuadrícula demo de 25 nodos. No representa todavía
 las calles reales de Manta. El formato para sustituirla por una exportación
 validada de OpenStreetMap está documentado en
 [data/README.md](data/README.md).
+
+Los IDs `N-0001` y `N-0002` son identificadores técnicos. El estado y el mapa
+también exponen nombres legibles de intersecciones y calles, por ejemplo
+`Intersección Av. 4 de Noviembre / Calle 1` y `Av. 4 de Noviembre 1`. Al cargar
+datos reales, esos nombres deben venir de la exportación de OpenStreetMap.
+
+La regla vigente para la horda es la interpretación explícita del mundo:
+su nodo y todos sus vecinos se consideran zona peligrosa para el planificador.
+Si el tutor define otra regla para la evaluación, debe cambiarse en
+`src/routing.py` y actualizarse la prueba correspondiente.
 
 El cargador disponible es:
 

@@ -20,6 +20,7 @@ class Edge:
     target: str
     distance_m: float
     street_type: str
+    name: str = "calle sin nombre"
 
 
 @dataclass

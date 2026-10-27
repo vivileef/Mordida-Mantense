@@ -1,5 +1,6 @@
 import unittest
 import random
+from time import perf_counter
 from threading import Event
 
 from src.graph import CityGraph
@@ -42,6 +43,9 @@ class RouteServiceTests(unittest.TestCase):
         state = self.service.state()
         self.assertIn("nodoAnterior", state["sobrevivientes"][0])
         self.assertEqual(len(state["nodos"]), 25)
+        self.assertIn("rutas", state)
+        self.assertIn("nombre", state["nodos"][0])
+        self.assertTrue(state["rutas"][0]["calles"])
 
     def test_graph_can_load_frontend_map_contract(self) -> None:
         graph = CityGraph.from_dict(
@@ -56,12 +60,14 @@ class RouteServiceTests(unittest.TestCase):
                         "destino": "B",
                         "distancia_m": 50,
                         "tipo": "puente",
+                        "nombre": "Puente de prueba",
                     }
                 ],
             }
         )
         self.assertTrue(graph.has_edge("A", "B"))
         self.assertEqual(graph.nodes["B"], (3.0, 4.0))
+        self.assertEqual(graph.neighbors("A")[0].name, "Puente de prueba")
 
     def test_confirmed_move_updates_survivor_position(self) -> None:
         self.assertTrue(self.service.move_survivor("S-0001", "N-0014"))
@@ -166,6 +172,14 @@ class ScenarioTests(unittest.TestCase):
         self.assertEqual(service.world.turn, 20)
         self.assertEqual(len(service.world.events), 2)
         self.assertEqual(len(service.world.blocked_edges), 2)
+
+    def test_round_three_state_supports_200_survivors(self) -> None:
+        service = RouteService(scenario="ronda3")
+        started = perf_counter()
+        state = service.state()
+        elapsed = perf_counter() - started
+        self.assertEqual(len(state["sobrevivientes"]), 200)
+        self.assertLess(elapsed, 1.0)
 
     def test_unknown_scenario_is_rejected(self) -> None:
         with self.assertRaises(ValueError):
