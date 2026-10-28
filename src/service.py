@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict
+import logging
 import os
 import random
 from pathlib import Path
@@ -14,6 +15,9 @@ from .route_engine.paths import select_refuge_routes
 from .scenarios import build_scenario
 from .simulator import ApocalypseSimulator
 from .turn_loop import TurnLoop
+
+
+logger = logging.getLogger(__name__)
 
 
 class RouteService:
@@ -201,6 +205,14 @@ class RouteService:
                 continue
             refuge, paths = self._routes_and_refuge_for(survivor.id, survivor.node, limit=1)
             if not paths:
+                logger.warning(
+                    "Ruta omitida: sobreviviente=%s nodo=%s turno=%s motivo=%s refugios=%s",
+                    survivor.id,
+                    survivor.node,
+                    self.world.turn,
+                    self._route_omission_reason(survivor.node),
+                    sorted(refuge.id for refuge in self.world.refuges.values()),
+                )
                 continue
             path = paths[0]
             planned_streets = []
@@ -225,6 +237,33 @@ class RouteService:
                 }
             )
         return routes
+
+    def _route_omission_reason(self, start: str) -> str:
+        """Diagnose an omitted route without relaxing the planner's safety rules."""
+        if start not in self.graph.nodes:
+            return "nodo_del_sobreviviente_ausente_del_grafo"
+        refuge_nodes = {refuge.node for refuge in self.world.refuges.values()}
+        if not refuge_nodes:
+            return "sin_refugios_configurados"
+
+        def reachable(ignore_closures: bool) -> set[str]:
+            visited = {start}
+            pending = [start]
+            while pending:
+                current = pending.pop()
+                for edge in self.graph.neighbors(current):
+                    if not ignore_closures and self.world.is_blocked(current, edge.target):
+                        continue
+                    if edge.target not in visited:
+                        visited.add(edge.target)
+                        pending.append(edge.target)
+            return visited
+
+        if refuge_nodes & reachable(ignore_closures=False):
+            return "rutas_descartadas_por_peligros_observables"
+        if refuge_nodes & reachable(ignore_closures=True):
+            return "cierres_desconectan_todos_los_refugios"
+        return "refugios_desconectados_en_el_grafo"
 
     def simulate_turn(self, blocked_edge: tuple[str, str] | None = None) -> int:
         """Avanza exactamente un turno, opcionalmente aplicando un cierre de calle."""

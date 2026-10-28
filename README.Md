@@ -358,6 +358,14 @@ Invoke-RestMethod -Method Post `
   -Body $body | ConvertTo-Json
 ```
 
+El cierre solo se registra si esa conexión existe en el grafo cargado. Las
+rondas cargan sus eventos al llamar `POST /escenario`: `ronda2` intenta cerrar
+su calle programada en el turno 10; `ronda3` intenta cerrar las suyas en los
+turnos 10 y 20. Esos IDs de ejemplo pertenecen al mapa demo de 25 nodos. Si se
+usa otro mapa, hay que configurar las aristas de evento con IDs de ese mapa;
+el backend ahora registra un error y no declara aplicado un cierre inexistente.
+En el estado inicial sin escenario no se programan cierres.
+
 ### `POST /escenario`
 
 Carga uno de los escenarios de la prueba de fuego:
@@ -433,7 +441,7 @@ protegidas directamente al navegador.
   direcciones opuestas por la misma calle.
 - **Calle bloqueada:** se bloquea en ambos sentidos.
 - **Eventos:** se aplican automáticamente en el turno programado.
-- **Rutas:** Dijkstra ponderado por distancia de calle, con alternativas y
+- **Rutas:** A* ponderado por distancia de calle, con alternativas y
   caché invalidada por cambios de zombies y calles bloqueadas.
 - **Cruce frontal:** el planificador evita una calle si el último movimiento
   visible de un zombie cruzó en sentido contrario.

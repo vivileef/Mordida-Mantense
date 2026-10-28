@@ -5,8 +5,9 @@ rama `feature/motor-rutas`. No reemplaza el README general del equipo.
 
 ## Qué se implementó
 
-- **Dijkstra ponderado por distancia:** el motor recorre el grafo existente y
-  suma `distancia_m` de cada calle para elegir el camino más corto.
+- **A* ponderado por distancia:** el motor recorre el grafo existente y suma
+  `distancia_m` de cada calle para elegir el camino más corto; si no puede
+  justificar una heurística admisible, usa una heurística de cero (Dijkstra).
 - **Refugios y alternativas:** elige un refugio alcanzable de menor distancia;
   entrega rutas alternativas para que el frontend pueda representarlas.
 - **Evaluación de peligros:** evita nodos ocupados por zombies visibles,
@@ -53,6 +54,13 @@ correspondientes de `GET /mapa` y une ambos resultados. Por ahora `/mapa`
 expone la cuadrícula demo de 25 nodos de `CityGraph.demo()`; todavía no son
 calles reales de Manta. Cuando esté listo el JSON del mapa, el motor lo puede
 consumir mediante `CityGraph.from_dict(...)` sin duplicar el planificador.
+
+Cuando `/estado` omite la ruta de un sobreviviente activo, el backend registra
+en sus logs el nodo, el turno y si la causa probable son peligros, cierres que
+desconectan refugios o refugios desconectados en el grafo. Los IDs de cierres
+incluidos en las rondas de ejemplo son propios del mapa demo; con otro mapa se
+deben sustituir por aristas existentes. Un cierre inexistente queda en los
+logs y no se reporta como evento aplicado.
 
 ## Configuración
 
