@@ -101,6 +101,26 @@ npm run dev
 
 En desarrollo el proxy de Vite agrega `x-api-key` solo si el proceso local tiene `MANTA_API_KEY` configurada. No se proporciona ni se debe guardar una clave en el repositorio. Sin una clave autorizada, `/estado` y las acciones protegidas responderán 401. En un frontend estático de producción no hay proxy de Vite: se necesita un proxy/backend confiable que autentique al usuario e inyecte la clave; no se debe compilar la clave en el bundle del navegador.
 
+## Funciones nivel PRO
+
+`GET /estado` también publica:
+
+- `prediccionesCorredores`: trayectoria estimada de los corredores para los
+  próximos turnos y el sobreviviente objetivo.
+- `refugios`: `ocupados`, `disponibles` y `lleno`; el planificador evita
+  asignar rutas a refugios sin capacidad.
+- `rescate`: cinco camionetas, cada una con capacidad para cuatro personas y
+  velocidad operativa de dos tramos por turno.
+
+Endpoints protegidos adicionales:
+
+- `GET /predicciones`: devuelve las predicciones de corredores.
+- `GET /rescate`: calcula la prioridad de recogida y el orden de asignación.
+- `POST /rescate/despachar`: confirma las asignaciones de la flota.
+
+La prioridad de rescate favorece sobrevivientes expuestos al objetivo de un
+corredor, después la cercanía a amenazas y finalmente el identificador estable.
+
 Antes de considerar integrada la vista API, la responsable del backend debe confirmar/desplegar que `/mapa` publique el grafo vial real con geometrías compatibles con nodos y conexiones, y facilitar un mecanismo de autenticación adecuado para el navegador. La muestra actual de nombres no demuestra que sean nombres oficiales de OpenStreetMap.
 
 ## Comprobaciones al recibir el backend nuevo

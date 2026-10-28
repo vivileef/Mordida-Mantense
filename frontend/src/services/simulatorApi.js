@@ -13,4 +13,5 @@ export const requestNextStep = api.requestNextStep;
 export const moveSurvivor = api.moveSurvivor;
 export const selectScenario = api.selectScenario;
 export const simulateTurn = api.simulateTurn;
+export const dispatchRescue = api.dispatchRescue;
 export const apiConfigured = Boolean(baseUrl);

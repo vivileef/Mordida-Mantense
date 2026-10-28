@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from .graph import CityGraph
-from .model import CityEvent, Refuge, Survivor, WorldState, Zombie, ZombieType
+from .model import CityEvent, Refuge, RescueVehicle, Survivor, WorldState, Zombie, ZombieType
 
 
 SCENARIO_SIZES = {"ronda1": 20, "ronda2": 80, "ronda3": 200}
@@ -34,11 +34,19 @@ def build_scenario(name: str, graph: CityGraph | None = None) -> WorldState:
     }
     zombies = _zombies_for(name, nodes)
     events = _events_for(name, graph)
+    vehicles = {
+        f"V-{number:02d}": RescueVehicle(
+            f"V-{number:02d}",
+            list(refuges.values())[(number - 1) % len(refuges)].node,
+        )
+        for number in range(1, 6)
+    }
     return WorldState(
         survivors=survivors,
         zombies=zombies,
         refuges=refuges,
         scheduled_events=events,
+        rescue_vehicles=vehicles,
     )
 
 

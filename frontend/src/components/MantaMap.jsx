@@ -118,6 +118,16 @@ function survivorIcon(label = "Sobreviviente") {
   });
 }
 
+function rescueVehicleIcon(label = "Camioneta de rescate") {
+  return divIcon({
+    className: "rescue-vehicle-wrapper",
+    html: `<span class="rescue-vehicle" role="img" aria-label="${label}"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M5 10h14l4 5h4v8H5z"/><path d="M19 10v5h4M9 23a3 3 0 1 0 0 1M23 23a3 3 0 1 0 0 1M5 18h4"/></svg></span>`,
+    iconSize: [38, 38],
+    iconAnchor: [19, 19],
+    popupAnchor: [0, -19],
+  });
+}
+
 function RecenterMap() {
   const map = useMap();
   return (
@@ -221,6 +231,7 @@ const MantaMap = memo(function MantaMap({
     survivors: true,
     zombies: true,
     shelters: true,
+    rescue: true,
     blocked: true,
     routes: true,
     intersections: false,
@@ -524,6 +535,7 @@ const MantaMap = memo(function MantaMap({
           ["survivors", "Sobrevivientes"],
           ["zombies", "Zombies"],
           ["shelters", "Refugios"],
+          ["rescue", "Rescate"],
           ["routes", "Rutas"],
           ["blocked", "Calles bloqueadas"],
           ["intersections", "Intersecciones"],
@@ -535,7 +547,7 @@ const MantaMap = memo(function MantaMap({
             aria-pressed={layers[layer]}
             onClick={() => toggleLayer(layer)}
           >
-            {layers[layer] ? "●" : "○"} {label}
+            {layers[layer] ? "●" : "○"} {label} · {layers[layer] ? "ON" : "OFF"}
           </button>
         ))}
         {mode === "api" && (
@@ -818,6 +830,31 @@ const MantaMap = memo(function MantaMap({
               </Marker>
             ) : null;
           })}
+        {layers.rescue &&
+          (world?.rescate?.vehiculos || []).map((vehicle) => {
+            const position = nodeMap.get(String(vehicle.node));
+            if (!position) return null;
+            const target = vehicle.target_node || vehicle.targetNode;
+            return (
+              <Marker
+                position={position}
+                icon={rescueVehicleIcon(`Camioneta ${vehicle.id}`)}
+                key={vehicle.id}
+              >
+                <Tooltip>Camioneta {vehicle.id}</Tooltip>
+                <Popup>
+                  <b>Camioneta {vehicle.id}</b>
+                  <br />
+                  Estado: {vehicle.status}
+                  <br />
+                  Pasajeros: {vehicle.pasajeros ?? vehicle.passenger_ids?.length ?? 0}/{vehicle.capacity}
+                  <br />
+                  Velocidad: {vehicle.speed}x
+                  {target ? <><br />Destino: {target}</> : null}
+                </Popup>
+              </Marker>
+            );
+          })}
       </MapContainer>
       <div className="map-legend" aria-label="Leyenda de entidades del mapa">
         <span>
@@ -861,6 +898,10 @@ const MantaMap = memo(function MantaMap({
             aria-hidden="true"
           />{" "}
           Refugio
+        </span>
+        <span>
+          <i className="legend-symbol legend-symbol--rescue" aria-hidden="true" />
+          Rescate
         </span>
         <span>
           <i className="legend-line" aria-hidden="true" /> Calle bloqueada

@@ -55,6 +55,19 @@ class Refuge:
     capacity: int = 100
 
 
+@dataclass
+class RescueVehicle:
+    """Camioneta de rescate con velocidad y capacidad operativas."""
+
+    id: str
+    node: str
+    capacity: int = 4
+    speed: int = 2
+    status: str = "disponible"
+    passenger_ids: list[str] = field(default_factory=list)
+    target_node: str | None = None
+
+
 @dataclass(frozen=True)
 class CityEvent:
     """Cierre de una calle que se aplica automáticamente en un turno."""
@@ -76,6 +89,7 @@ class WorldState:
     refuges: dict[str, Refuge] = field(default_factory=dict)
     scheduled_events: list[CityEvent] = field(default_factory=list)
     events: list[CityEvent] = field(default_factory=list)
+    rescue_vehicles: dict[str, RescueVehicle] = field(default_factory=dict)
 
     def is_blocked(self, source: str, target: str) -> bool:
         # Las calles se consideran bloqueadas en ambas direcciones.

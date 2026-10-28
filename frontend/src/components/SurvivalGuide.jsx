@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 
 const entries = [
   {
@@ -74,12 +74,35 @@ function GuideIcon({ kind, color }) {
 }
 
 export default function SurvivalGuide({ mode, onClose }) {
+  const closeButtonRef = useRef(null);
+  const previousFocusRef = useRef(null);
+
   useEffect(() => {
+    previousFocusRef.current = document.activeElement;
+    closeButtonRef.current?.focus();
     const handleKeyDown = (event) => {
       if (event.key === "Escape") onClose();
+      if (event.key !== "Tab") return;
+      const panel = event.currentTarget.querySelector(".guide-panel");
+      const focusable = panel?.querySelectorAll(
+        'button, [href], select, textarea, input, [tabindex]:not([tabindex="-1"])',
+      );
+      if (!focusable?.length) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
     };
     document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+      previousFocusRef.current?.focus?.();
+    };
   }, [onClose]);
 
   return (
@@ -104,6 +127,7 @@ export default function SurvivalGuide({ mode, onClose }) {
             <h2 id="survival-guide-title">Guía de supervivencia</h2>
           </div>
           <button
+            ref={closeButtonRef}
             className="guide-close"
             type="button"
             onClick={onClose}

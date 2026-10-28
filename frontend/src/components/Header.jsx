@@ -15,9 +15,13 @@ export default function Header({
       <div className="brand">
         <div
           className="logo-slot"
-          aria-label="Espacio reservado para el logo de Brujas de la Nube"
+          aria-label="Mordida Mantense"
+          role="img"
         >
-          LOGO
+          <svg viewBox="0 0 48 48" aria-hidden="true">
+            <path d="M24 4 29 18 44 24 29 30 24 44 19 30 4 24l15-6z" />
+            <path d="m24 13 3 8 8 3-8 3-3 8-3-8-8-3 8-3z" />
+          </svg>
         </div>
         <div>
           <strong>
@@ -60,12 +64,12 @@ export default function Header({
             : "DESCONECTADO"}
         </div>
         {mode === "demo" && (
-          <button className="button button--ghost" onClick={onTogglePause}>
+          <button className="button button--ghost" type="button" onClick={onTogglePause}>
             {paused ? "Reanudar" : "Pausar"}
           </button>
         )}
         {mode === "demo" && (
-          <button className="button button--ghost" onClick={onReset}>
+          <button className="button button--ghost" type="button" onClick={onReset}>
             Reiniciar
           </button>
         )}

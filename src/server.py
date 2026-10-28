@@ -63,12 +63,22 @@ class ApiHandler(BaseHTTPRequestHandler):
                         "mapa": "GET /mapa",
                         "ruta": "GET /ruta/{sobrevivienteId} (requiere x-api-key)",
                         "salud": "GET /salud",
+                        "predicciones": "GET /predicciones (requiere x-api-key)",
+                        "rescate": "GET /rescate y POST /rescate/despachar (requiere x-api-key)",
                     },
                 },
             )
             return
         if self.path == "/mapa":
             self._send(200, self.service.graph.as_dict())
+            return
+        if self.path == "/predicciones":
+            if self._authorized():
+                self._send(200, {"predicciones": self.service.runner_predictions()})
+            return
+        if self.path == "/rescate":
+            if self._authorized():
+                self._send(200, self.service.rescue_plan())
             return
         match = re.fullmatch(r"/ruta/([^/]+)", self.path)
         if match:
@@ -84,6 +94,10 @@ class ApiHandler(BaseHTTPRequestHandler):
             self._send(200, self.service.state())
 
     def do_POST(self) -> None:
+        if self.path == "/rescate/despachar":
+            if self._authorized():
+                self._send(200, self.service.dispatch_rescue())
+            return
         if self.path == "/mover-sobreviviente":
             if not self._authorized():
                 return

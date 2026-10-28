@@ -8,7 +8,7 @@ from pathlib import Path
 from threading import RLock
 
 from .graph import CityGraph
-from .model import Refuge, Survivor, WorldState, Zombie, ZombieType
+from .model import Refuge, RescueVehicle, Survivor, WorldState, Zombie, ZombieType
 from .route_engine.cache import RouteCache
 from .route_engine.hazards import danger_signature
 from .route_engine.paths import select_refuge_routes
@@ -71,7 +71,32 @@ class RouteService:
             "Z-0002": Zombie("Z-0002", ZombieType.RUNNER, "N-0019"),
             "Z-0003": Zombie("Z-0003", ZombieType.HORDE, "N-0009"),
         }
+        refuge_nodes = [refuge.node for refuge in world.refuges.values()]
+        world.rescue_vehicles = {
+            f"V-{number:02d}": RescueVehicle(
+                f"V-{number:02d}",
+                refuge_nodes[(number - 1) % len(refuge_nodes)],
+            )
+            for number in range(1, 6)
+        }
         return world
+
+    def _refuge_occupancy(self, refuge_id: str) -> int:
+        return sum(
+            survivor.active and survivor.refuge_id == refuge_id
+            for survivor in self.world.survivors.values()
+        )
+
+    def _available_refuges(self, survivor_id: str) -> set[str]:
+        available = set()
+        for refuge in self.world.refuges.values():
+            occupancy = self._refuge_occupancy(refuge.id)
+            assigned = self.world.survivors.get(survivor_id)
+            if assigned and assigned.refuge_id == refuge.id:
+                occupancy -= 1
+            if occupancy < refuge.capacity:
+                available.add(refuge.id)
+        return available
 
     def next_step(self, survivor_id: str, node: str, turn: int) -> str:
         """Devuelve un único movimiento válido para el turno solicitado."""
@@ -97,7 +122,11 @@ class RouteService:
             start = node or survivor.node
             if start not in self.graph.nodes:
                 return None, []
-            refuge_signature = tuple(sorted((r.id, r.node) for r in self.world.refuges.values()))
+            available_refuges = self._available_refuges(survivor_id)
+            refuge_signature = tuple(sorted(
+                (r.id, r.node, r.capacity, self._refuge_occupancy(r.id))
+                for r in self.world.refuges.values()
+            ))
             key = (survivor.refuge_id, refuge_signature, start, limit,
                    self.horde_radius, danger_signature(self.world))
             cached = self._route_cache.get(key)
@@ -109,6 +138,19 @@ class RouteService:
                 preferred_refuge_id=survivor.refuge_id, limit=limit,
                 horde_radius=self.horde_radius, return_refuge=True,
             )
+            if refuge is not None and refuge.id not in available_refuges:
+                refuge, routes = select_refuge_routes(
+                    self.graph,
+                    self.world,
+                    start,
+                    [item for item in self.world.refuges.values() if item.id in available_refuges],
+                    preferred_refuge_id=None,
+                    limit=limit,
+                    horde_radius=self.horde_radius,
+                    return_refuge=True,
+                )
+            if refuge is not None and refuge.id != survivor.refuge_id:
+                survivor.refuge_id = refuge.id
             self._route_cache.put(key, (refuge, routes))
             return refuge, [path.copy() for path in routes]
 
@@ -169,6 +211,9 @@ class RouteService:
                 "refugios": [
                     {
                         **asdict(refuge),
+                        "ocupados": self._refuge_occupancy(refuge.id),
+                        "disponibles": max(0, refuge.capacity - self._refuge_occupancy(refuge.id)),
+                        "lleno": self._refuge_occupancy(refuge.id) >= refuge.capacity,
                         "nombreNodo": self.graph.node_name(refuge.node),
                     }
                     for refuge in self.world.refuges.values()
@@ -195,7 +240,139 @@ class RouteService:
                 ],
                 "nodos": self.graph.as_dict()["nodos"],
                 "rutas": self.planned_routes(),
+                "prediccionesCorredores": self.runner_predictions(),
+                "rescate": self.rescue_state(),
             }
+
+    def runner_predictions(self, horizon: int = 3) -> list[dict]:
+        """Predice el trayecto de cada corredor sin mutar el mundo."""
+        with self._lock:
+            predictions = []
+            for zombie in self.world.zombies.values():
+                if zombie.type != ZombieType.RUNNER or not zombie.visible:
+                    continue
+                current = zombie.node
+                path = [current]
+                for _ in range(max(1, min(horizon, 8))):
+                    target = self._closest_survivor_node(current)
+                    if target is None:
+                        break
+                    next_node = self._next_runner_node(current, target)
+                    if next_node is None or next_node == current:
+                        break
+                    path.append(next_node)
+                    current = next_node
+                predictions.append({
+                    "corredorId": zombie.id,
+                    "nodoActual": zombie.node,
+                    "nodosPredichos": path,
+                    "objetivo": self._closest_survivor_node(zombie.node),
+                    "turnos": len(path) - 1,
+                })
+            return predictions
+
+    def _next_runner_node(self, origin: str, target: str) -> str | None:
+        candidates = [
+            edge.target for edge in self.graph.neighbors(origin)
+            if not self.world.is_blocked(origin, edge.target)
+        ]
+        if not candidates:
+            return None
+        return min(candidates, key=lambda node: self._hop_distance(node, target))
+
+    def _closest_survivor_node(self, origin: str) -> str | None:
+        candidates = [
+            survivor.node
+            for survivor in self.world.survivors.values()
+            if survivor.active and self._hop_distance(origin, survivor.node) <= 3
+        ]
+        return min(candidates, key=lambda node: self._hop_distance(origin, node), default=None)
+
+    def _hop_distance(self, start: str, goal: str) -> int:
+        if start == goal:
+            return 0
+        pending = [(start, 0)]
+        visited = {start}
+        while pending:
+            node, distance = pending.pop(0)
+            for edge in self.graph.neighbors(node):
+                if self.world.is_blocked(node, edge.target) or edge.target in visited:
+                    continue
+                if edge.target == goal:
+                    return distance + 1
+                visited.add(edge.target)
+                pending.append((edge.target, distance + 1))
+        return 10**9
+
+    def rescue_state(self) -> dict:
+        vehicles = []
+        for vehicle in self.world.rescue_vehicles.values():
+            vehicles.append({
+                **asdict(vehicle),
+                "pasajeros": len(vehicle.passenger_ids),
+                "disponibles": max(0, vehicle.capacity - len(vehicle.passenger_ids)),
+            })
+        assignments = [
+            {
+                "vehiculoId": vehicle.id,
+                "sobrevivienteId": survivor_id,
+                "orden": index + 1,
+            }
+            for vehicle in self.world.rescue_vehicles.values()
+            for index, survivor_id in enumerate(vehicle.passenger_ids)
+        ]
+        return {
+            "vehiculos": vehicles,
+            "asignaciones": assignments,
+            "capacidadTotal": sum(v.capacity for v in self.world.rescue_vehicles.values()),
+        }
+
+    def rescue_plan(self) -> dict:
+        """Asigna primero a quienes están más expuestos y luego a los más cercanos."""
+        with self._lock:
+            candidates = [
+                survivor for survivor in self.world.survivors.values()
+                if survivor.active and not any(
+                    survivor.id in vehicle.passenger_ids
+                    for vehicle in self.world.rescue_vehicles.values()
+                )
+            ]
+            runners = {prediction["objetivo"] for prediction in self.runner_predictions()}
+            candidates.sort(key=lambda survivor: (
+                0 if survivor.node in runners else 1,
+                self._nearest_zombie_distance(survivor.node),
+                survivor.id,
+            ))
+            assignments = []
+            for vehicle in self.world.rescue_vehicles.values():
+                for survivor in candidates:
+                    if len(assignments) >= len(candidates):
+                        break
+                    if any(item["sobrevivienteId"] == survivor.id for item in assignments):
+                        continue
+                    assignments.append({
+                        "vehiculoId": vehicle.id,
+                        "sobrevivienteId": survivor.id,
+                        "orden": len(assignments) + 1,
+                        "prioridad": "corredor" if survivor.node in runners else "distancia",
+                    })
+                    if sum(item["vehiculoId"] == vehicle.id for item in assignments) == vehicle.capacity:
+                        break
+            return {"asignaciones": assignments, "vehiculos": self.rescue_state()["vehiculos"]}
+
+    def dispatch_rescue(self) -> dict:
+        with self._lock:
+            plan = self.rescue_plan()
+            for assignment in plan["asignaciones"]:
+                vehicle = self.world.rescue_vehicles[assignment["vehiculoId"]]
+                vehicle.passenger_ids.append(assignment["sobrevivienteId"])
+                vehicle.status = "asignada"
+                vehicle.target_node = self.world.survivors[assignment["sobrevivienteId"]].node
+            return self.rescue_state() | {"asignaciones": plan["asignaciones"]}
+
+    def _nearest_zombie_distance(self, node: str) -> int:
+        visible = [zombie.node for zombie in self.world.zombies.values() if zombie.visible]
+        return min((self._hop_distance(node, target) for target in visible), default=10**9)
 
     def planned_routes(self) -> list[dict]:
         """Publica la ruta completa vigente de cada sobreviviente activo."""

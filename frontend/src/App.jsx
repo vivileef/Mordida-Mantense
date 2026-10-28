@@ -6,6 +6,7 @@ import MantaMap from "./components/MantaMap";
 import RoutePanel from "./components/RoutePanel";
 import EventLog from "./components/EventLog";
 import SurvivalGuide from "./components/SurvivalGuide";
+import ProFeaturesPanel from "./components/ProFeaturesPanel";
 import { useWorldState } from "./hooks/useWorldState";
 import { fetchSurvivorRoute, moveSurvivor, requestNextStep } from "./services/simulatorApi";
 import {
@@ -229,7 +230,12 @@ export default function App() {
   if (!world) {
     return (
       <main className="loading-screen" aria-live="polite">
-        <div className="logo-slot">LOGO</div>
+        <div className="logo-slot" aria-hidden="true">
+          <svg viewBox="0 0 48 48">
+            <path d="M24 4 29 18 44 24 29 30 24 44 19 30 4 24l15-6z" />
+            <path d="m24 13 3 8 8 3-8 3-3 8-3-8-8-3 8-3z" />
+          </svg>
+        </div>
         <h1>{error ? "Backend no disponible" : "Inicializando centro de operaciones"}</h1>
         <p>{error || "Sincronizando estado del mundo…"}</p>
         <button className="button button--primary" type="button" onClick={refresh}>Reintentar conexión</button>
@@ -281,6 +287,7 @@ export default function App() {
           <button className="button button--guide" type="button" onClick={() => setGuideOpen(true)}>Guía de supervivencia</button>
         </div>
         <StatsPanel world={world} />
+        <ProFeaturesPanel world={world} mode={mode} onRefresh={refresh} />
         <div className="workspace">
           <MantaMap
             world={displayWorld}

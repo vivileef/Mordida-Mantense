@@ -1088,7 +1088,7 @@
   color: var(--ink);
 }
 .workspace {
-  grid-template-columns: minmax(0, 1fr) 325px;
+  grid-template-columns: minmax(0, 1fr) 430px;
   gap: 14px;
   margin-top: 14px;
 }
@@ -1103,7 +1103,7 @@
   background: #252a29;
 }
 .leaflet-tile {
-  filter: grayscale(0.7) brightness(0.57) contrast(1.12);
+  filter: grayscale(0.45) brightness(0.68) contrast(1.08);
 }
 .map-label {
   top: 14px;
@@ -1160,6 +1160,19 @@
 }
 .side-column {
   gap: 14px;
+}
+.route-panel {
+  min-width: 0;
+  overflow: hidden;
+}
+.route-list,
+.event-list {
+  min-width: 0;
+  overflow-x: hidden;
+}
+.route-card {
+  min-width: 0;
+  overflow: hidden;
 }
 .panel {
   border-color: var(--line);
@@ -1312,6 +1325,69 @@
   font-size: 10px;
   letter-spacing: 0.06em;
 }
+.button:disabled,
+.mode-toggle button:disabled {
+  cursor: not-allowed;
+  opacity: 0.52;
+}
+.button:disabled:hover {
+  border-color: #555b57;
+  color: #d2d7d2;
+  background: #292c2b;
+}
+.route-card__data span {
+  flex: 1 1 0;
+  min-width: 0;
+}
+.route-card__data b {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.route-card__data {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: 9px 14px;
+}
+.route-card__data span {
+  min-width: 0;
+}
+.route-card__risk {
+  padding-top: 7px;
+  border-top: 1px solid #3b2a6b;
+}
+.rescue-vehicle-wrapper {
+  background: transparent;
+  border: 0;
+}
+.rescue-vehicle {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border: 2px solid #22e58b;
+  border-radius: 8px;
+  color: #22e58b;
+  background: #101b18ee;
+  box-shadow: 0 0 0 3px #22e58b33, 0 3px 8px #000b;
+}
+.rescue-vehicle svg {
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
+}
+.legend-symbol--rescue {
+  color: var(--toxic);
+  border-radius: 5px;
+}
+.map-controls button {
+  min-height: 30px;
+}
 .legend-route--safe {
   border-top-color: var(--toxic);
 }
@@ -1319,6 +1395,68 @@
   display: flex;
   align-items: center;
   gap: 16px;
+}
+.pro-panel {
+  margin-top: 12px;
+  padding: 14px;
+  border: 1px solid var(--panel-border);
+  border-left: 3px solid var(--pumpkin);
+  background: var(--panel);
+}
+.pro-panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.pro-panel h2 {
+  margin: 3px 0 0;
+  color: var(--text);
+  font-size: 15px;
+}
+.pro-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  margin-top: 12px;
+}
+.pro-grid article {
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid #3b2a6b;
+  background: #0f1028;
+}
+.pro-grid strong,
+.pro-grid span {
+  display: block;
+}
+.pro-grid strong {
+  color: var(--pumpkin);
+  font-size: 11px;
+}
+.pro-grid span,
+.pro-grid p,
+.pro-panel__feedback {
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.4;
+}
+.pro-grid p {
+  margin: 7px 0 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pro-panel__feedback {
+  margin: 10px 0 0;
+}
+@media (max-width: 850px) {
+  .workspace {
+    grid-template-columns: 1fr;
+  }
+  .pro-grid {
+    grid-template-columns: 1fr;
+  }
 }
 .dashboard-actions .control-strip {
   flex: 1;
@@ -1713,7 +1851,7 @@
   background: var(--night);
 }
 .leaflet-tile {
-  filter: brightness(0.62) saturate(0.72) hue-rotate(210deg);
+  filter: grayscale(0.45) brightness(0.68) saturate(0.72) contrast(1.08) hue-rotate(210deg);
 }
 .map-label,
 .map-controls button,
@@ -1880,4 +2018,127 @@ div.survivor-character-wrapper {
   display: block !important;
   width: 48px !important;
   height: 64px !important;
+}
+
+/* Final layout refinements for readability and responsive balance. */
+.logo-slot {
+  position: relative;
+  overflow: hidden;
+  border-style: solid;
+  border-color: var(--aws-orange);
+  border-radius: 10px;
+  background: linear-gradient(145deg, #292217, #151918);
+  color: var(--aws-orange);
+  box-shadow: inset 0 0 0 1px #ffffff08, 0 4px 14px #0006;
+}
+.logo-slot::after {
+  content: "";
+  position: absolute;
+  inset: 5px;
+  border: 1px solid #d87b3244;
+  border-radius: 6px;
+}
+.logo-slot svg {
+  position: relative;
+  z-index: 1;
+  width: 29px;
+  height: 29px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
+}
+.stats-grid {
+  grid-template-columns: repeat(auto-fit, minmax(138px, 1fr));
+  gap: 8px;
+}
+.stat-card {
+  min-width: 0;
+  min-height: 78px;
+  padding: 11px;
+  border-radius: 5px;
+}
+.stat-card span:not(.stat-card__icon) {
+  font-size: 10px;
+}
+.stat-card strong {
+  font-size: 21px;
+}
+.control-strip__buttons {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.control-strip__buttons label {
+  color: var(--muted);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.control-strip__buttons select {
+  min-width: 190px;
+}
+.panel-source {
+  margin: -4px 0 12px;
+  color: #b6beb7;
+  font-size: 11px;
+  line-height: 1.4;
+}
+.route-card__data {
+  gap: 10px;
+}
+.route-card__data span {
+  min-width: 0;
+}
+.route-card__data b {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.map-recenter {
+  border: 1px solid #555b57;
+  border-radius: 4px;
+  padding: 7px 9px;
+  color: #d2d7d2;
+  background: #111515ed;
+  font-size: 10px;
+}
+@media (max-width: 1200px) {
+  .stats-grid {
+    grid-template-columns: repeat(5, minmax(138px, 1fr));
+    overflow-x: auto;
+  }
+}
+@media (max-width: 850px) {
+  .dashboard-actions {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .control-strip__buttons {
+    justify-content: flex-start;
+  }
+  .button--guide {
+    align-self: flex-start;
+  }
+}
+@media (max-width: 560px) {
+  .stats-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    overflow-x: visible;
+  }
+  .stat-card {
+    min-height: 72px;
+  }
+  .control-strip__buttons,
+  .control-strip__buttons .button,
+  .control-strip__buttons select {
+    width: 100%;
+  }
+  .control-strip__buttons label {
+    width: 100%;
+  }
 }

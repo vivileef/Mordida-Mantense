@@ -74,5 +74,13 @@ export function createSimulatorApi(request) {
         body: JSON.stringify({}),
       });
     },
+
+    dispatchRescue() {
+      return request("/rescate/despachar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+    },
   };
 }

@@ -43,13 +43,13 @@ export default function SimulationControls({
               <option value="ronda2">Ronda 2 · 80 sobrevivientes</option>
               <option value="ronda3">Ronda 3 · 200 sobrevivientes</option>
             </select>
-            <button className="button button--primary" type="button" onClick={() => onLoadScenario?.(scenario)} disabled={scenarioLoading || turnLoading || connection !== "connected"}>
+            <button className="button button--primary" type="button" onClick={() => onLoadScenario?.(scenario)} disabled={scenarioLoading || turnLoading || connection !== "connected"} title={connection !== "connected" ? "Conecta el backend para iniciar una ronda." : undefined}>
               {scenarioLoading ? "Cargando ronda…" : "Iniciar ronda"}
             </button>
-            <button className="button button--secondary" type="button" onClick={onAdvanceTurn} disabled={turnLoading || scenarioLoading || connection !== "connected"}>
-              {turnLoading ? "Avanzando…" : "Avanzar un turno"}
+            <button className="button button--secondary" type="button" onClick={onAdvanceTurn} disabled={turnLoading || scenarioLoading || connection !== "connected"} title={connection !== "connected" ? "Conecta el backend para simular un turno." : undefined}>
+              {turnLoading ? "Simulando…" : "Simular turno"}
             </button>
-            <button className="button button--secondary" type="button" onClick={onRefresh} disabled={turnLoading || scenarioLoading}>Actualizar</button>
+            <button className="button button--secondary" type="button" onClick={onRefresh} disabled={turnLoading || scenarioLoading} title="Consultar el estado actual del backend">Actualizar estado</button>
           </>
         )}
       </div>
