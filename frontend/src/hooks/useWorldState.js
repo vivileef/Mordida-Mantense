@@ -14,6 +14,7 @@ const configuredMode = import.meta.env.VITE_DATA_MODE === "api" ? "api" : "demo"
 export function useWorldState({ demo = configuredMode === "demo", paused = false }) {
   const demoService = useRef(createDemoService());
   const inFlightCount = useRef(0);
+  const authFailed = useRef(false);
   const mounted = useRef(true);
   const sourceVersion = useRef(0);
   const activeSource = useRef(demo);
@@ -24,7 +25,7 @@ export function useWorldState({ demo = configuredMode === "demo", paused = false
   const [lastUpdated, setLastUpdated] = useState(null);
 
   const load = useCallback(async () => {
-    if (inFlightCount.current > 0 || activeSource.current !== demo) return;
+    if (inFlightCount.current > 0 || authFailed.current || activeSource.current !== demo) return;
     const version = sourceVersion.current;
     inFlightCount.current += 1;
     try {
@@ -42,9 +43,10 @@ export function useWorldState({ demo = configuredMode === "demo", paused = false
       setLastUpdated(new Date());
     } catch (loadError) {
       if (!mounted.current || sourceVersion.current !== version) return;
+      if (loadError.status === 401) authFailed.current = true;
       setConnection("error");
       console.error("No se pudo cargar el estado de simulación.", loadError);
-      setError("No se pudieron actualizar los datos. Inténtalo de nuevo.");
+      setError(loadError.message || "No se pudieron actualizar los datos.");
     } finally {
       inFlightCount.current = Math.max(0, inFlightCount.current - 1);
     }
@@ -173,6 +175,7 @@ export function useWorldState({ demo = configuredMode === "demo", paused = false
     setConnection("connecting");
     setError("");
 
+    authFailed.current = false;
     const isCurrent = () =>
       mounted.current && sourceVersion.current === version && activeSource.current === demo;
 
@@ -194,9 +197,10 @@ export function useWorldState({ demo = configuredMode === "demo", paused = false
         setLastUpdated(new Date());
       } catch (loadError) {
         if (!isCurrent()) return;
+        if (loadError.status === 401) authFailed.current = true;
         setConnection("error");
         console.error("No se pudo iniciar la simulación.", loadError);
-        setError("No se pudieron cargar los datos. Inténtalo de nuevo.");
+        setError(loadError.message || "No se pudieron cargar los datos.");
       } finally {
         inFlightCount.current = Math.max(0, inFlightCount.current - 1);
       }
@@ -223,7 +227,10 @@ export function useWorldState({ demo = configuredMode === "demo", paused = false
     lastUpdated,
     reset,
     setDemoBlockedEdge,
-    refresh: load,
+    refresh: async () => {
+      authFailed.current = false;
+      await load();
+    },
     refreshMap,
     loadScenario,
     advanceTurn,

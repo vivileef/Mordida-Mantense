@@ -45,34 +45,32 @@ Las posiciones del DEMO son entidades ficticias ubicadas sobre nodos de la red v
 
 ## 3. Conectar el backend
 
-Edita `.env` (no se deben subir credenciales):
+Para conectar el modo **API REAL** con el backend ECS durante desarrollo, Vite
+reenvía `/api/...` a `VITE_API_BASE_URL` y elimina el prefijo `/api`. El valor
+predeterminado apunta al servicio AWS; `GET /mapa` y `GET /salud` son de solo
+lectura y no requieren clave.
 
-```dotenv
-VITE_API_BASE_URL=http://localhost:8080
-VITE_POLL_INTERVAL_MS=2000
-VITE_API_TIMEOUT_MS=5000
-VITE_DATA_MODE=demo
-```
-
-Luego reinicia `npm run dev` y selecciona **API REAL**. `VITE_DATA_MODE=api` permite abrir directamente en modo API; el valor `demo` mantiene el modo DEMO por defecto. El adaptador consulta `GET /estado` cada ciclo y `GET /mapa` al iniciar API o mediante una acción explícita de refresco del mapa; así no se descarga el grafo estático cada dos segundos. Ambas respuestas se validan, se aplica un timeout configurable y, si una consulta falla, se conserva el último estado válido y se muestra el error. El botón `Avanzar un paso` llama `POST /paso` y `POST /mover-sobreviviente` solo para la persona seleccionada; no se envían acciones masivas. Consulta `INTEGRACION_BACKEND.md` para el detalle.
-
-El backend de este repositorio se inicia desde la raíz con:
+La clave se mantiene únicamente en el servidor local de Vite. Obtén la clave
+vigente con la responsable del backend y configúrala en la sesión de PowerShell
+antes de iniciar Vite; no uses `clave-local`, no la pongas en `.env`, `.env.production`
+o en una variable `VITE_*`:
 
 ```powershell
-$env:MANTA_API_KEY = "clave-local"
-$env:MANTA_GRAPH_PATH = "tools/grafo-manta/manta.json"
-python -m src.server
-```
-
-Para usar la API protegida durante el desarrollo, configura `MANTA_API_KEY`
-solo en el entorno del proceso de Vite; nunca la pongas en una variable
-`VITE_*` ni en el bundle del navegador:
-
-```powershell
-$env:MANTA_API_KEY = "clave-local"
+cd "C:\Users\danna\Mordida-Mantense\frontend"
+$env:MANTA_API_KEY = "<clave confirmada por la responsable del backend>"
 npm run dev
 ```
 
+Si la clave está ausente o es un valor de ejemplo, Vite no envía `x-api-key` y
+`GET /estado` seguirá respondiendo 401. El encabezado entrante tampoco puede
+reemplazar la clave configurada. No se incluye una credencial privada en el
+bundle de producción.
+
+El proxy de Vite existe solo durante `npm run dev`. Para producción estática,
+la autenticación requiere un proxy/intermediario seguro del lado servidor que
+conserve la clave y la agregue a las solicitudes al backend, o un flujo de
+autenticación de usuario que el backend admita. No configures una clave privada
+en una variable `VITE_*` ni la compiles en React.
 En modo API, el selector de ronda envía `POST /escenario` para solicitar la
 ronda 1, 2 o 3. **Avanzar un paso** solicita y confirma el movimiento solo
 para el sobreviviente seleccionado. Un estado sin rutas o bloqueos se muestra

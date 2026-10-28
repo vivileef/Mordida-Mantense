@@ -21,15 +21,15 @@ export default function SimulationControls({
       <div>
         <span className="eyebrow">FUENTE DE DATOS</span>
         <div className="mode-toggle" aria-label="Fuente de datos">
-          <button type="button" className={mode === "demo" ? "is-active" : ""} aria-pressed={mode === "demo"} onClick={() => onModeChange("demo")}>DEMO</button>
-          <button type="button" className={mode === "api" ? "is-active" : ""} aria-pressed={mode === "api"} onClick={() => onModeChange("api")}>API REAL</button>
+          <button type="button" className={mode === "demo" ? "is-active" : ""} aria-pressed={mode === "demo"} onClick={() => onModeChange("demo")}>DEMOSTRACIÓN</button>
+          <button type="button" className={mode === "api" ? "is-active" : ""} aria-pressed={mode === "api"} onClick={() => onModeChange("api")}>DATOS REALES</button>
         </div>
       </div>
       <div className="control-strip__help">
         {mode === "demo"
-          ? "Los movimientos son ficticios y se actualizan cada 2 s."
+          ? "Los movimientos son simulados y se actualizan cada 2 segundos."
           : localBlocksActive
-            ? "Hay cambios de prueba locales; restablecelos antes de avanzar el estado real del servidor."
+            ? "Hay cambios de calles sin guardar. Restablece los datos para avanzar el turno."
             : "El estado se actualiza periódicamente."}
       </div>
       <div className="control-strip__buttons">

@@ -1,0 +1,84 @@
+/* Marcadores de vehículos: estilos aislados para no alterar los marcadores existentes. */
+.rescue-vehicle-icon-wrapper,
+.leaflet-div-icon.rescue-vehicle-icon-wrapper {
+  background: transparent !important;
+  border: 0 !important;
+}
+
+.rescue-vehicle-icon {
+  --vehicle-color: #ff9f1c;
+  display: block;
+  width: 44px;
+  height: 36px;
+  filter: drop-shadow(0 2px 3px #000b) drop-shadow(0 0 5px color-mix(in srgb, var(--vehicle-color) 45%, transparent));
+}
+
+.rescue-vehicle-icon svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.rescue-vehicle-shadow {
+  fill: #0009;
+}
+
+.rescue-vehicle-body {
+  fill: #17112f;
+  stroke: var(--vehicle-color);
+  stroke-linejoin: round;
+  stroke-width: 2.5;
+}
+
+.rescue-vehicle-window {
+  fill: #54d6df;
+  stroke: #d8faff;
+  stroke-linejoin: round;
+  stroke-width: 1;
+}
+
+.rescue-vehicle-mark {
+  fill: var(--vehicle-color);
+}
+
+.rescue-vehicle-detail {
+  fill: var(--vehicle-color);
+  stroke: var(--vehicle-color);
+  stroke-width: 1.5;
+}
+
+.rescue-vehicle-wheel {
+  fill: #17112f;
+  stroke: #f5f0ff;
+  stroke-width: 1.5;
+}
+
+.rescue-vehicle-hub {
+  fill: var(--vehicle-color);
+}
+
+.rescue-vehicle-icon--moving {
+  --vehicle-color: var(--success, #6ee7b7);
+}
+
+.rescue-vehicle-icon--unavailable {
+  --vehicle-color: #9a9a9a;
+}
+
+.rescue-vehicle-icon--unavailable .rescue-vehicle-window {
+  fill: #777;
+  stroke: #aaa;
+}
+
+.rescue-vehicle-popup {
+  display: grid;
+  gap: 5px;
+  min-width: 170px;
+  color: #202020;
+  font-size: 12px;
+}
+
+.rescue-vehicle-popup strong {
+  margin-bottom: 3px;
+  font-size: 13px;
+}

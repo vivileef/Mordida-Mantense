@@ -1,8 +1,15 @@
-const technicalId = /^[A-Z]+-\d+$/i;
+const technicalId = /^(?:[A-Z]+[-_]\d+|\d+)$/i;
 const generatedIntersectionName = /^intersecci[oó]n\s+[A-Z]+-\d+$/i;
 
 function configuredName(item) {
-  const value = item?.nombre ?? item?.name;
+  const value =
+    item?.nombre ??
+    item?.nombreCompleto ??
+    item?.name ??
+    item?.fullName ??
+    item?.displayName ??
+    item?.descripcion ??
+    item?.description;
   if (typeof value !== "string") return "";
   const name = value.trim();
   return name && !technicalId.test(name) && !generatedIntersectionName.test(name)
@@ -53,7 +60,7 @@ export function createDisplayNames(world = {}) {
   return {
     survivors: entityLabels(survivors, "Sobreviviente"),
     shelters: new Map(shelters.map((shelter, index) => [
-      String(shelter.id),
+      String(shelter.id ?? shelter.refugioId),
       configuredName(shelter) || `Refugio ${index + 1}`,
     ])),
     zombies: entityLabels(zombies, "Zombie", (zombie) => {
@@ -61,7 +68,8 @@ export function createDisplayNames(world = {}) {
       if (["corredor", "runner"].includes(type)) return "Corredor";
       if (["horda", "horde"].includes(type)) return "Horda";
       if (["dormido", "dormant"].includes(type)) return "Dormido";
-      return "Caminante";
+      if (["caminante", "walker"].includes(type)) return "Caminante";
+      return "Zombi";
     }),
   };
 }

@@ -98,9 +98,7 @@ export default function SurvivalGuide({ mode, onClose }) {
       >
         <header className="guide-panel__header">
           <div>
-            <span className="eyebrow">
-              SPOOKYTHON 2026 · BRUJAS DE LA NUBE
-            </span>
+            <span className="eyebrow">SPOOKYTHON 2026 · BRUJAS DE LA NUBE</span>
             <h2 id="survival-guide-title">Guía de supervivencia</h2>
           </div>
           <button
@@ -115,7 +113,7 @@ export default function SurvivalGuide({ mode, onClose }) {
         <p className="guide-source">
           {mode === "demo"
             ? "DEMO · reglas y posiciones ficticias para demostración."
-            : "API · reglas visualizadas según el simulador conectado."}
+            : "Reglas visualizadas según el simulador conectado."}
         </p>
         <section className="guide-section">
           <h3>Entidades y señales</h3>

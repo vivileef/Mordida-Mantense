@@ -18,7 +18,7 @@ import {
   streetGeometry,
   uniqueStreetPaths,
 } from "../services/geo";
-import { directedEdgeKey, isDirectedEdgeBlocked } from "../services/roadRouting.js";
+import { directedEdgeKey } from "../services/roadRouting.js";
 import {
   createDisplayNames,
   displayEntityName,
@@ -26,17 +26,8 @@ import {
   shouldDisplayZombie,
   streetDisplayName,
 } from "../utils/presentation";
+import RescueVehiclesLayer from "./RescueVehiclesLayer";
 
-const labels = {
-  caminante: "Caminante",
-  walker: "Caminante",
-  corredor: "Corredor",
-  runner: "Runner",
-  horda: "Horda",
-  horde: "Horde",
-  dormido: "Dormido",
-  dormant: "Dormido",
-};
 const iconShapes = {
   survivor:
     '<circle cx="16" cy="8" r="3.5"/><path d="M10 24c.4-5 2.4-8 6-8s5.6 3 6 8M12 19h8M16 16v8"/>',
@@ -67,6 +58,57 @@ function markerKind(type) {
   if (normalized === "dormido" || normalized === "dormant") return "dormant";
   return "walker";
 }
+
+function zombieTypeLabel(type) {
+  const normalized = String(type ?? "").toLowerCase();
+  if (["caminante", "walker"].includes(normalized)) return "Caminante";
+  if (["corredor", "runner"].includes(normalized)) return "Corredor";
+  if (["horda", "horde"].includes(normalized)) return "Horda";
+  if (["dormido", "dormant"].includes(normalized)) return "Dormido";
+  return "Zombi";
+}
+
+function readableLocation(value, fallback) {
+  if (typeof value !== "string") return fallback;
+  const name = value.trim();
+  return name && !/^(?:[A-Z]+[-_]\d+|\d+)$/i.test(name) ? name : fallback;
+}
+
+function streetTypeLabel(value) {
+  const type = String(value ?? "").toLowerCase().replaceAll("_", " ");
+  const labels = {
+    avenue: "Avenida",
+    avenida: "Avenida",
+    street: "Calle",
+    calle: "Calle",
+    bridge: "Puente",
+    puente: "Puente",
+    path: "Sendero",
+    sendero: "Sendero",
+  };
+  return labels[type] ?? "Vía";
+}
+
+function streetDirectionsLabel(directions, blockedEdges, nodesById, streets) {
+  return directions
+    .map((direction) => {
+      const origin = intersectionDisplayName(
+        nodesById.get(String(direction.origen)),
+        streets,
+      );
+      const destination = intersectionDisplayName(
+        nodesById.get(String(direction.destino)),
+        streets,
+      );
+      const state = blockedEdges.has(
+        directedEdgeKey(direction.origen, direction.destino),
+      )
+        ? "Conexión bloqueada"
+        : "Conexión disponible";
+      return `${origin} → ${destination}: ${state}`;
+    })
+    .join("; ");
+}
 function entityIcon(kind, label) {
   const color = iconColors[kind];
   return divIcon({
@@ -78,7 +120,11 @@ function entityIcon(kind, label) {
   });
 }
 
-function survivorIcon({ label = "Sobreviviente", selected = false, active = true } = {}) {
+function survivorIcon({
+  label = "Sobreviviente",
+  selected = false,
+  active = true,
+} = {}) {
   const accent = active ? "#22E58B" : "#8A9490";
   const ring = selected ? "#F5C542" : accent;
   return divIcon({
@@ -105,7 +151,7 @@ function survivorIcon({ label = "Sobreviviente", selected = false, active = true
           <path d="M20 48 L19 57 M28 48 L30 57" fill="none" stroke="#27312F" stroke-width="6" stroke-linecap="round"/>
           <path d="M13 58h7M29 58h8" stroke="#E4863A" stroke-width="5" stroke-linecap="round"/>
           <path d="M28 27v10" stroke="#D8F4DE" stroke-width="2" opacity=".8"/>
-          <circle cx="24" cy="13" r="13" fill="none" stroke="${ring}" stroke-width="${selected ? 2 : 1}" opacity="${selected ? 1 : .45}"/>
+          <circle cx="24" cy="13" r="13" fill="none" stroke="${ring}" stroke-width="${selected ? 2 : 1}" opacity="${selected ? 1 : 0.45}"/>
         </svg>
       </div>
     `,
@@ -126,6 +172,30 @@ function RecenterMap() {
       Centrar Manta
     </button>
   );
+}
+
+function MapSizeObserver() {
+  const map = useMap();
+
+  useEffect(() => {
+    const container = map.getContainer();
+    let frame = 0;
+    const resizeObserver = new ResizeObserver(() => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() =>
+        map.invalidateSize({ animate: false, pan: false }),
+      );
+    });
+    resizeObserver.observe(container);
+    map.invalidateSize({ animate: false, pan: false });
+
+    return () => {
+      cancelAnimationFrame(frame);
+      resizeObserver.disconnect();
+    };
+  }, [map]);
+
+  return null;
 }
 function FitWorld({ positions }) {
   const map = useMap();
@@ -151,9 +221,14 @@ function middleOf(path) {
 }
 
 function samePath(first, second) {
-  return first.length === second.length && first.length > 1 && first.every(([lat, lng], index) =>
-    Math.abs(lat - second[index][0]) <= 1e-7 &&
-    Math.abs(lng - second[index][1]) <= 1e-7,
+  return (
+    first.length === second.length &&
+    first.length > 1 &&
+    first.every(
+      ([lat, lng], index) =>
+        Math.abs(lat - second[index][0]) <= 1e-7 &&
+        Math.abs(lng - second[index][1]) <= 1e-7,
+    )
   );
 }
 
@@ -162,25 +237,39 @@ function streetSelectionKey(street, path) {
 }
 
 function directionsForStreet(street, path, streetMap, nodeMap) {
-  const reverse = (streetMap.get(`${street.destino}|${street.origen}`) ?? []).find((candidate) =>
+  const reverse = (
+    streetMap.get(`${street.destino}|${street.origen}`) ?? []
+  ).find((candidate) =>
     samePath(streetGeometry(candidate, nodeMap), [...path].reverse()),
   );
   return reverse ? [street, reverse] : [street];
 }
 
-function blockedDirectionsForPath(street, path, streetMap, nodeMap, blockedEdges) {
+function blockedDirectionsForPath(
+  street,
+  path,
+  streetMap,
+  nodeMap,
+  blockedEdges,
+) {
   const blocked = [];
-  const candidates = streetMap.get(`${street.origen}|${street.destino}`) ?? [street];
+  const candidates = streetMap.get(`${street.origen}|${street.destino}`) ?? [
+    street,
+  ];
   for (const candidate of candidates) {
-    if (blockedEdges.has(directedEdgeKey(candidate.origen, candidate.destino)) &&
-        samePath(streetGeometry(candidate, nodeMap), path)) {
+    if (
+      blockedEdges.has(directedEdgeKey(candidate.origen, candidate.destino)) &&
+      samePath(streetGeometry(candidate, nodeMap), path)
+    ) {
       blocked.push(candidate);
     }
   }
   const reverse = streetMap.get(`${street.destino}|${street.origen}`) ?? [];
   for (const candidate of reverse) {
-    if (blockedEdges.has(directedEdgeKey(candidate.origen, candidate.destino)) &&
-        samePath(streetGeometry(candidate, nodeMap), [...path].reverse())) {
+    if (
+      blockedEdges.has(directedEdgeKey(candidate.origen, candidate.destino)) &&
+      samePath(streetGeometry(candidate, nodeMap), [...path].reverse())
+    ) {
       blocked.push(candidate);
     }
   }
@@ -317,22 +406,38 @@ const MantaMap = memo(function MantaMap({
     .sort()
     .join("\u0000");
   const blockedEdges = useMemo(
-    () => new Set(blockedEdgeSignature ? blockedEdgeSignature.split("\u0000") : []),
+    () =>
+      new Set(blockedEdgeSignature ? blockedEdgeSignature.split("\u0000") : []),
     [blockedEdgeSignature],
   );
-  const renderedStreetPaths = useMemo(() => streetPaths.map((item) => {
-    const directions = directionsForStreet(item.street, item.path, streetMap, nodeMap);
-    const blockedDirections = blockedDirectionsForPath(
-      item.street, item.path, streetMap, nodeMap, blockedEdges,
-    );
-    return {
-      ...item,
-      directions,
-      blockedDirections,
-      selectionKey: streetSelectionKey(item.street, item.path),
-    };
-  }), [streetPaths, streetMap, nodeMap, blockedEdges]);
-  const selectedStreet = renderedStreetPaths.find((item) => item.selectionKey === selectedStreetKey);
+  const renderedStreetPaths = useMemo(
+    () =>
+      streetPaths.map((item) => {
+        const directions = directionsForStreet(
+          item.street,
+          item.path,
+          streetMap,
+          nodeMap,
+        );
+        const blockedDirections = blockedDirectionsForPath(
+          item.street,
+          item.path,
+          streetMap,
+          nodeMap,
+          blockedEdges,
+        );
+        return {
+          ...item,
+          directions,
+          blockedDirections,
+          selectionKey: streetSelectionKey(item.street, item.path),
+        };
+      }),
+    [streetPaths, streetMap, nodeMap, blockedEdges],
+  );
+  const selectedStreet = renderedStreetPaths.find(
+    (item) => item.selectionKey === selectedStreetKey,
+  );
   const selectedDirections = selectedStreet?.directions ?? [];
   const routePaths = useMemo(
     () =>
@@ -468,19 +573,36 @@ const MantaMap = memo(function MantaMap({
   };
   const setStreetBlocked = async (street, blocked) => {
     if (!selectedStreet || !onSetStreetBlocked) {
-      setBlockerFeedback("Selecciona una conexion valida del mapa antes de cambiar su estado.");
+      setBlockerFeedback(
+        "Selecciona una conexion valida del mapa antes de cambiar su estado.",
+      );
       return;
     }
     try {
-      const result = await onSetStreetBlocked(street.origen, street.destino, blocked);
-      setBlockerFeedback(result?.message || (result?.ok ? "Estado de la calle actualizado." : "No se pudo cambiar el estado de la calle."));
+      const result = await onSetStreetBlocked(
+        street.origen,
+        street.destino,
+        blocked,
+      );
+      setBlockerFeedback(
+        result?.message ||
+          (result?.ok
+            ? "Estado de la calle actualizado."
+            : "No se pudo cambiar el estado de la calle."),
+      );
     } catch (error) {
       console.error("No se pudo cambiar el estado de la calle.", error);
-      setBlockerFeedback("No se pudo cambiar el estado de la calle. Inténtalo de nuevo.");
+      setBlockerFeedback(
+        "No se pudo cambiar el estado de la calle. Inténtalo de nuevo.",
+      );
     }
   };
   const selectedParallelCount = selectedStreet
-    ? (streetMap.get(`${selectedStreet.street.origen}|${selectedStreet.street.destino}`) ?? []).length
+    ? (
+        streetMap.get(
+          `${selectedStreet.street.origen}|${selectedStreet.street.destino}`,
+        ) ?? []
+      ).length
     : 0;
   return (
     <section className="map-panel">
@@ -499,9 +621,14 @@ const MantaMap = memo(function MantaMap({
       <div className="map-notices" aria-live="polite">
         {localBlocksActive && (
           <div className="map-notice map-notice--error">
-            Hay cambios locales de calles y rutas de prueba. No se guardaron en el backend.
-            <button className="map-blocker__clear" type="button" onClick={onResetLocalBlocks}>
-              Restablecer estado API
+            Hay cambios locales de calles y rutas de prueba. No se guardaron en
+            el servidor.
+            <button
+              className="map-blocker__clear"
+              type="button"
+              onClick={onResetLocalBlocks}
+            >
+              Restablecer datos recibidos
             </button>
           </div>
         )}
@@ -524,7 +651,7 @@ const MantaMap = memo(function MantaMap({
                 ? routeLookup?.status === "loading"
                   ? "Consultando la ruta del sobreviviente seleccionado…"
                   : routeLookup?.status === "unavailable"
-                    ? "El backend no encontró una ruta segura para el sobreviviente seleccionado."
+                    ? "No hay una ruta disponible para la persona seleccionada."
                     : routeLookup?.status === "error"
                       ? "No se pudo consultar la ruta. Inténtalo de nuevo más tarde."
                       : "No hay rutas disponibles para mostrar en este momento."
@@ -536,7 +663,7 @@ const MantaMap = memo(function MantaMap({
           (world?.aristasBloqueadas?.length ?? 0) === 0 && (
             <div className="map-notice">
               {world?.camposEstadoAusentes?.includes("aristasBloqueadas")
-                ? "GET /estado no incluyó el campo aristasBloqueadas."
+                ? "No hay información de calles bloqueadas en el estado recibido."
                 : "No hay calles bloqueadas en este estado."}
             </div>
           )}
@@ -549,7 +676,7 @@ const MantaMap = memo(function MantaMap({
         {mode === "api" &&
           world?.camposEstadoAusentes?.includes("sobrevivientes") && (
             <div className="map-notice">
-              GET /estado no incluye sobrevivientes; se mostrarán los zombis
+              No hay información de personas disponible; se mostrarán los zombis
               recibidos.
             </div>
           )}
@@ -568,7 +695,8 @@ const MantaMap = memo(function MantaMap({
                       ? "Zombie"
                       : "Refugio",
                 );
-                return nodeName ? `${label} (${nodeName})` : label;
+                const location = readableLocation(nodeName, "");
+                return location ? `${label} (${location})` : label;
               })
               .join("; ")}
             . No se mostraron: el nodo indicado no existe o no está en el mapa
@@ -603,29 +731,48 @@ const MantaMap = memo(function MantaMap({
               . Verifica que sus tramos tengan geometría en el mapa.
             </div>
           )}
-        {(world?.advertenciasRutasLocales?.length > 0 || world?.advertenciasBloqueosLocales?.length > 0) && (
-          <div className="map-notice map-notice--error">Algunos cambios de prueba no pudieron aplicarse.</div>
+        {(world?.advertenciasRutasLocales?.length > 0 ||
+          world?.advertenciasBloqueosLocales?.length > 0) && (
+          <div className="map-notice map-notice--error">
+            Algunos cambios de prueba no pudieron aplicarse.
+          </div>
         )}
         {routesUnavailable.length > 0 && (
           <div className="map-notice map-notice--error">
-            Sin ruta disponible para {routesUnavailable
-              .map((route) => displayEntityName(displayNames, "survivors", route.survivorId ?? route.sobrevivienteId, "un sobreviviente"))
-              .join(", ")}.
+            Sin ruta disponible para{" "}
+            {routesUnavailable
+              .map((route) =>
+                displayEntityName(
+                  displayNames,
+                  "survivors",
+                  route.survivorId ?? route.sobrevivienteId,
+                  "un sobreviviente",
+                ),
+              )
+              .join(", ")}
+            .
           </div>
         )}
       </div>
       {blockMode && (
         <div className="map-blocker" role="status" aria-live="polite">
-          <strong>{mode === "api" ? "Bloqueo de calle" : "Modo Bloquear calle"}</strong>
+          <strong>
+              {mode === "api" ? "Bloqueo de calle" : "Bloquear una calle"}
+          </strong>
           {selectedStreet ? (
             <>
               <span>{streetDisplayName(selectedStreet.street)}</span>
               {selectedParallelCount > 1 && (
-                <small>El modelo identifica bloqueos por par de nodos: se afectaran {selectedParallelCount} conexiones paralelas del sentido elegido.</small>
+                <small>
+                  Se bloquearán {selectedParallelCount} conexiones paralelas
+                  en el sentido elegido.
+                </small>
               )}
               <div className="map-blocker__directions">
                 {selectedDirections.map((street) => {
-                  const blocked = blockedEdges.has(directedEdgeKey(street.origen, street.destino));
+                  const blocked = blockedEdges.has(
+                    directedEdgeKey(street.origen, street.destino),
+                  );
                   return (
                     <button
                       className="button button--secondary"
@@ -633,19 +780,37 @@ const MantaMap = memo(function MantaMap({
                       key={directedEdgeKey(street.origen, street.destino)}
                       onClick={() => setStreetBlocked(street, !blocked)}
                     >
-                      {blocked ? "Desbloquear" : "Bloquear"} sentido {street.origen} → {street.destino}
+                      {blocked ? "Desbloquear" : "Bloquear"} sentido{" "}
+                      {intersectionDisplayName(
+                        nodesById.get(String(street.origen)),
+                        mapWorld?.calles || [],
+                      )} → {intersectionDisplayName(
+                        nodesById.get(String(street.destino)),
+                        mapWorld?.calles || [],
+                      )}
                     </button>
                   );
                 })}
               </div>
             </>
           ) : (
-            <span>Haz clic en una calle georreferenciada para seleccionar una conexion existente.</span>
+            <span>
+              Haz clic en una calle georreferenciada para seleccionar una
+              conexión existente.
+            </span>
           )}
 
-          {blockerFeedback && <span className="map-blocker__feedback">{blockerFeedback}</span>}
+          {blockerFeedback && (
+            <span className="map-blocker__feedback">{blockerFeedback}</span>
+          )}
           {selectedStreet && (
-            <button className="map-blocker__clear" type="button" onClick={() => setSelectedStreetKey("")}>Quitar seleccion</button>
+            <button
+              className="map-blocker__clear"
+              type="button"
+              onClick={() => setSelectedStreetKey("")}
+            >
+              Quitar seleccion
+            </button>
           )}
         </div>
       )}
@@ -674,7 +839,11 @@ const MantaMap = memo(function MantaMap({
           type="button"
           aria-pressed={blockMode}
           disabled={!hasStreetGeometry}
-          title={hasStreetGeometry ? "Selecciona una calle y bloquea un sentido" : "El grafo no contiene geometria vial seleccionable"}
+          title={
+            hasStreetGeometry
+              ? "Selecciona una calle y bloquea un sentido"
+              : "El mapa no tiene calles que se puedan seleccionar"
+          }
           onClick={() => {
             setBlockMode(!blockMode);
             setSelectedStreetKey("");
@@ -693,12 +862,8 @@ const MantaMap = memo(function MantaMap({
           </button>
         )}
       </div>
-      <MapContainer
-        center={center}
-        zoom={14}
-        scrollWheelZoom
-        className="leaflet-map"
-      >
+      <MapContainer center={center} zoom={13} className="leaflet-map">
+        <MapSizeObserver />
         <TileLayer
           attribution="&copy; OpenStreetMap contributors"
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
@@ -706,10 +871,18 @@ const MantaMap = memo(function MantaMap({
         <RecenterMap />
         <FitWorld positions={mapPositions} />
         {renderedStreetPaths.map((item) => {
-          const { street, path, index, directions, blockedDirections, selectionKey } = item;
+          const {
+            street,
+            path,
+            index,
+            directions,
+            blockedDirections,
+            selectionKey,
+          } = item;
           const selected = selectedStreetKey === selectionKey;
           const blocked = blockedDirections.length > 0;
-          const partiallyBlocked = blockedDirections.length > 0 &&
+          const partiallyBlocked =
+            blockedDirections.length > 0 &&
             blockedDirections.length < directions.length;
           const showOpen = layers.streets;
           const showBlocked = blockedDirections.length > 0 && layers.blocked;
@@ -729,20 +902,27 @@ const MantaMap = memo(function MantaMap({
                   eventHandlers={streetEvents}
                 >
                   <Tooltip sticky>{streetDisplayName(street)}</Tooltip>
-                  {!blockMode && !partiallyBlocked && <Popup>
-                    <b>{streetDisplayName(street)}</b>
-                    <br />
-                    Tipo: {street.tipo || "calle"}
-                    {street.distancia_m ? (
-                      <>
-                        <br />
-                        Distancia: {Math.round(street.distancia_m)} m
-                      </>
-                    ) : null}
-                    <br />
-                    {directions.map((direction) => `${direction.origen} -> ${direction.destino}: ${blockedEdges.has(directedEdgeKey(direction.origen, direction.destino)) ? "bloqueada" : "transitable"}`).join("; ")}
-                    {selected ? " · seleccionada" : ""}
-                  </Popup>}
+                  {!blockMode && !partiallyBlocked && (
+                    <Popup>
+                      <b>{streetDisplayName(street)}</b>
+                      <br />
+                      Tipo de vía: {streetTypeLabel(street.tipo)}
+                      {street.distancia_m ? (
+                        <>
+                          <br />
+                          Distancia: {Math.round(street.distancia_m)} m
+                        </>
+                      ) : null}
+                      <br />
+                      {streetDirectionsLabel(
+                        directions,
+                        blockedEdges,
+                        nodesById,
+                        mapWorld?.calles || [],
+                      )}
+                      {selected ? " · seleccionada" : ""}
+                    </Popup>
+                  )}
                 </Polyline>
               )}
               {showBlocked && (
@@ -756,21 +936,30 @@ const MantaMap = memo(function MantaMap({
                   }}
                   eventHandlers={streetEvents}
                 >
-                  <Tooltip sticky>{streetDisplayName(street)} · bloqueada</Tooltip>
-                  {!blockMode && <Popup>
-                  <b>{streetDisplayName(street)}</b>
-                  <br />
-                  Tipo: {street.tipo || "calle"}
-                  {street.distancia_m ? (
-                    <>
+                  <Tooltip sticky>
+                    {streetDisplayName(street)} · bloqueada
+                  </Tooltip>
+                  {!blockMode && (
+                    <Popup>
+                      <b>{streetDisplayName(street)}</b>
                       <br />
-                      Distancia: {Math.round(street.distancia_m)} m
-                    </>
-                  ) : null}
-                  <br />
-                  {directions.map((direction) => `${direction.origen} -> ${direction.destino}: ${blockedEdges.has(directedEdgeKey(direction.origen, direction.destino)) ? "bloqueada" : "transitable"}`).join("; ")}
-                  {selected ? " · seleccionada" : ""}
-                  </Popup>}
+                      Tipo de vía: {streetTypeLabel(street.tipo)}
+                      {street.distancia_m ? (
+                        <>
+                          <br />
+                          Distancia: {Math.round(street.distancia_m)} m
+                        </>
+                      ) : null}
+                      <br />
+                      {streetDirectionsLabel(
+                        directions,
+                        blockedEdges,
+                        nodesById,
+                        mapWorld?.calles || [],
+                      )}
+                      {selected ? " · seleccionada" : ""}
+                    </Popup>
+                  )}
                 </Polyline>
               )}
               {blocked && path.length > 1 && (
@@ -845,12 +1034,13 @@ const MantaMap = memo(function MantaMap({
             if (!position) return null;
             const type = String(zombie.tipo || "").toLowerCase();
             const kind = markerKind(type);
+            const typeLabel = zombieTypeLabel(type);
             const isDormant = type === "dormido" || type === "dormant";
             return (
               <Fragment key={zombie.id}>
                 <Marker
                   position={position}
-                  icon={entityIcon(kind, labels[type] || zombie.tipo)}
+                  icon={entityIcon(kind, typeLabel)}
                 >
                   <Tooltip>
                     {displayEntityName(
@@ -859,7 +1049,7 @@ const MantaMap = memo(function MantaMap({
                       zombie.id,
                       "Zombie",
                     )}
-                    : {labels[type] || zombie.tipo}
+                    : {typeLabel}
                   </Tooltip>
                   <Popup>
                     <b>
@@ -871,14 +1061,16 @@ const MantaMap = memo(function MantaMap({
                       )}
                     </b>
                     <br />
-                    Tipo: {labels[type] || zombie.tipo}
+                    Tipo: {typeLabel}
                     <br />
                     Ubicación:{" "}
-                    {zombie.nombreNodo ||
+                    {readableLocation(
+                      zombie.nombreNodo,
                       intersectionDisplayName(
                         nodesById.get(String(zombie.nodo)),
                         mapWorld?.calles || [],
-                      )}
+                      ),
+                    )}
                     {zombie.cantidad ? (
                       <>
                         <br />
@@ -907,7 +1099,12 @@ const MantaMap = memo(function MantaMap({
               <Marker
                 position={position}
                 icon={survivorIcon({
-                  label: `Sobreviviente ${survivor.id}`,
+                  label: displayEntityName(
+                    displayNames,
+                    "survivors",
+                    survivor.id,
+                    "Sobreviviente",
+                  ),
                   selected: String(selectedId) === String(survivor.id),
                   active: survivor.activo !== false,
                 })}
@@ -940,7 +1137,7 @@ const MantaMap = memo(function MantaMap({
                     mapWorld?.calles || [],
                   )}
                   <br />
-                  Estado: {survivor.activo ? "en camino" : "eliminado"}
+                    Estado: {survivor.activo ? "Activo" : "No activo"}
                   <br />
                   Destino:{" "}
                   {displayEntityName(
@@ -957,6 +1154,7 @@ const MantaMap = memo(function MantaMap({
           (world?.refugios || []).map((shelter) => {
             const shelterNode = shelter.nodo ?? shelter.node;
             const position = nodeMap.get(String(shelterNode));
+            const capacity = shelter.capacidad ?? shelter.capacity;
             return position ? (
               <Marker
                 position={position}
@@ -990,16 +1188,17 @@ const MantaMap = memo(function MantaMap({
                   )}
                   <br />
                   Estado: disponible
-                  {(shelter.capacidad ?? shelter.capacity) != null ? (
+                  {capacity != null && Number.isFinite(Number(capacity)) ? (
                     <>
                       <br />
-                      Capacidad: {shelter.capacidad ?? shelter.capacity}
+                      Capacidad: {Number(capacity)} personas
                     </>
                   ) : null}
                 </Popup>
               </Marker>
             ) : null;
           })}
+        <RescueVehiclesLayer world={world} />
       </MapContainer>
       <div className="map-legend" aria-label="Leyenda de entidades del mapa">
         <span>

@@ -1,10 +1,18 @@
 export default function ConnectionStatus({ mode, connection, lastUpdated }) {
-  const label = mode === 'demo' ? 'DEMO · DATOS SIMULADOS' : connection === 'connected' ? 'API CONECTADA' : connection === 'connecting' ? 'CONECTANDO' : 'API DESCONECTADA';
+  const label =
+    mode === "demo"
+      ? "DEMOSTRACIÓN"
+      : connection === "connected"
+        ? "CONEXIÓN ESTABLE"
+        : connection === "connecting"
+          ? "CONECTANDO"
+          : "SISTEMA DESCONECTADO";
+
   return (
     <div className={`connection connection--${connection}`}>
       <span className="connection__dot" />
       <span>{label}</span>
-      {lastUpdated && <small>{lastUpdated.toLocaleTimeString('es-EC')}</small>}
+      {lastUpdated && <small>Última actualización: {lastUpdated.toLocaleTimeString("es-EC")}</small>}
     </div>
   );
 }

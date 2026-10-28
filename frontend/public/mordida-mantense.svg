@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <defs>
+    <linearGradient id="shield" x1="8" y1="5" x2="56" y2="59" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#A78BFA"/>
+      <stop offset="1" stop-color="#6D3FD1"/>
+    </linearGradient>
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="2" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <rect x="2" y="2" width="60" height="60" rx="17" fill="#120E2E" stroke="url(#shield)" stroke-width="2.5"/>
+  <circle cx="32" cy="31" r="19" stroke="#8B5CF6" stroke-opacity=".4" stroke-width="1.5"/>
+  <circle cx="32" cy="31" r="12" stroke="#FF9F1C" stroke-opacity=".75" stroke-width="1.5"/>
+  <path d="M32 14v7M32 41v7M15 31h7M42 31h7" stroke="#D9D0FF" stroke-opacity=".7" stroke-width="2" stroke-linecap="round"/>
+  <path d="M32 22c-6.1 0-11 4.7-11 10.6 0 7.7 11 17.4 11 17.4s11-9.7 11-17.4C43 26.7 38.1 22 32 22Z" fill="#FF9F1C" filter="url(#glow)"/>
+  <circle cx="32" cy="32" r="5" fill="#120E2E"/>
+  <circle cx="32" cy="32" r="2.2" fill="#22E58B"/>
+</svg>

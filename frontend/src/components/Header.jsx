@@ -13,11 +13,12 @@ export default function Header({
   return (
     <header className="topbar">
       <div className="brand">
-        <div
-          className="logo-slot"
-          aria-label="Espacio reservado para el logo de Brujas de la Nube"
-        >
-          LOGO
+        <div className="logo-slot" aria-hidden="true">
+          <img
+            className="brand__logo"
+            src="/mordida-mantense.svg"
+            alt=""
+          />
         </div>
         <div>
           <strong>
@@ -32,7 +33,7 @@ export default function Header({
       <div className="topbar__metrics">
         <div>
           <span>TURNO</span>
-          <strong>{String(world?.turno || 0).padStart(3, "0")}</strong>
+          <strong>{world?.turno ?? 0}</strong>
         </div>
         <div>
           <span>TIEMPO</span>
@@ -55,7 +56,7 @@ export default function Header({
           <span />{" "}
           {connection === "connected"
             ? mode === "demo"
-              ? "DEMO"
+              ? "DEMOSTRACIÓN"
               : "OPERATIVO"
             : "DESCONECTADO"}
         </div>
