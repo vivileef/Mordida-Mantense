@@ -21,6 +21,7 @@ class Edge:
     distance_m: float
     street_type: str
     name: str = "calle sin nombre"
+    geometry: tuple[tuple[float, float], ...] = ()
 
 
 @dataclass

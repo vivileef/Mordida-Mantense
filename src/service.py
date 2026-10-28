@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import asdict
 import os
 import random
+from pathlib import Path
 from threading import RLock
 
 from .graph import CityGraph
@@ -20,7 +21,10 @@ class RouteService:
 
     def __init__(self, graph: CityGraph | None = None, scenario: str | None = None) -> None:
         # El grafo se inyecta para poder probar mapas alternativos sin cambiar el servicio.
-        self.graph = graph or CityGraph.demo()
+        # Los escenarios de estrés históricos conservan su grafo pequeño para
+        # que sus tiempos y contratos de prueba sean reproducibles. El servicio
+        # normal y los escenarios cargados por la API usan el snapshot OSM.
+        self.graph = graph or (CityGraph.demo() if scenario else self._load_default_graph())
         self.world = (
             build_scenario(scenario, self.graph)
             if scenario
@@ -32,6 +36,20 @@ class RouteService:
         self._lock = RLock()
         self._route_cache = RouteCache()
         self.horde_radius = max(0, int(os.environ.get("MANTA_HORDE_RADIUS", "1")))
+
+    @staticmethod
+    def _load_default_graph() -> CityGraph:
+        configured_path = os.environ.get("MANTA_GRAPH_PATH")
+        candidates = [
+            Path(configured_path) if configured_path else None,
+            Path(__file__).resolve().parent.parent / "tools" / "grafo-manta" / "manta.json",
+        ]
+        for path in candidates:
+            if path and path.is_file():
+                import json
+
+                return CityGraph.from_dict(json.loads(path.read_text(encoding="utf-8")))
+        return CityGraph.demo()
 
     def _initial_world(self) -> WorldState:
         """Crea un escenario pequeño reproducible para la primera versión."""

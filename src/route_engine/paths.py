@@ -84,7 +84,13 @@ def shortest_safe_path(
         return None
     frontal_edges = frontal_edges if frontal_edges is not None else dangerous_edges(world)
     banned_edges = banned_edges or set()
-    heuristic_scale = _admissible_heuristic_scale(graph)
+    heuristic_scale = getattr(graph, "_admissible_heuristic_scale_cache", None)
+    if heuristic_scale is None:
+        heuristic_scale = _admissible_heuristic_scale(graph)
+        try:
+            setattr(graph, "_admissible_heuristic_scale_cache", heuristic_scale)
+        except (AttributeError, TypeError):
+            pass
 
     def estimate(node: str) -> float:
         if heuristic_scale == 0:

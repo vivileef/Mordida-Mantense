@@ -33,7 +33,7 @@ def build_scenario(name: str, graph: CityGraph | None = None) -> WorldState:
         for number in range(1, survivor_count + 1)
     }
     zombies = _zombies_for(name, nodes)
-    events = _events_for(name)
+    events = _events_for(name, graph)
     return WorldState(
         survivors=survivors,
         zombies=zombies,
@@ -69,14 +69,25 @@ def _zombies_for(name: str, nodes: list[str]) -> dict[str, Zombie]:
     }
 
 
-def _events_for(name: str) -> list[CityEvent]:
+def _events_for(name: str, graph: CityGraph | None = None) -> list[CityEvent]:
     if name == "ronda1":
         return []
+    fallback_edges = iter(
+        (source, edge.target)
+        for source in (graph.nodes if graph else [])
+        for edge in (graph.neighbors(source) if graph else [])
+    )
+
+    def valid_edge(edge: tuple[str, str]) -> tuple[str, str]:
+        if graph and graph.has_edge(*edge):
+            return edge
+        return next(fallback_edges, edge)
+
     events = [
         CityEvent(
             turn=10,
             event_type="puente_colapsado",
-            edge=("N-0005", "N-0010"),
+            edge=valid_edge(("N-0005", "N-0010")),
             description="El puente principal colapsó.",
         )
     ]
@@ -85,7 +96,7 @@ def _events_for(name: str) -> list[CityEvent]:
             CityEvent(
                 turn=20,
                 event_type="avenida_bloqueada",
-                edge=("N-0011", "N-0012"),
+                edge=valid_edge(("N-0011", "N-0012")),
                 description="Una avenida quedó bloqueada por un accidente.",
             )
         )

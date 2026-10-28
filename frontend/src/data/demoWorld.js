@@ -1,72 +1,62 @@
-const center = [-0.9677, -80.7089];
+import roadNetwork from "./mantaRoadNetwork.json";
 
-const nodes = Array.from({ length: 25 }, (_, index) => {
-  const row = Math.floor(index / 5);
-  const column = index % 5;
+const center = [-0.9675, -80.7075];
+const nodes = roadNetwork.nodos;
+const streets = roadNetwork.calles;
 
-  return {
-    id: `N-${String(index + 1).padStart(4, "0")}`,
-    lat: center[0] + (row - 2) * 0.008,
-    lng: center[1] + (column - 2) * 0.009,
-  };
-});
-
-const streets = [];
-
-for (let row = 0; row < 5; row += 1) {
-  for (let column = 0; column < 5; column += 1) {
-    const index = row * 5 + column;
-
-    if (column < 4) {
-      streets.push({
-        origen: nodes[index].id,
-        destino: nodes[index + 1].id,
-        tipo: "avenida",
-      });
-    }
-
-    if (row < 4) {
-      streets.push({
-        origen: nodes[index].id,
-        destino: nodes[index + 5].id,
-        tipo: "calle",
-      });
-    }
-  }
+function nearestNode(lat, lng) {
+  return nodes.reduce((nearest, node) => {
+    const distance = (node.lat - lat) ** 2 + (node.lng - lng) ** 2;
+    return !nearest || distance < nearest.distance
+      ? { id: node.id, distance }
+      : nearest;
+  }, null).id;
 }
+
+const selectedNodes = [
+  nearestNode(-0.9675, -80.7075),
+  nearestNode(-0.962, -80.710),
+  nearestNode(-0.972, -80.704),
+  nearestNode(-0.958, -80.700),
+  nearestNode(-0.978, -80.712),
+  nearestNode(-0.965, -80.700),
+  nearestNode(-0.970, -80.716),
+  nearestNode(-0.955, -80.708),
+  nearestNode(-0.980, -80.705),
+].filter((id, index, values) => id && values.indexOf(id) === index);
 
 const baseWorld = {
   turno: 1,
 
   zombies: [
-    { id: "Z-014", tipo: "caminante", nodo: "N-0007", visible: true },
-    { id: "Z-032", tipo: "corredor", nodo: "N-0019", visible: true },
+    { id: "Z-014", tipo: "caminante", nodo: selectedNodes[1], visible: true },
+    { id: "Z-032", tipo: "corredor", nodo: selectedNodes[3], visible: true },
     {
       id: "H-003",
       tipo: "horda",
-      nodo: "N-0009",
+      nodo: selectedNodes[4],
       visible: true,
       cantidad: 14,
     },
-    { id: "Z-021", tipo: "dormido", nodo: "N-0021", visible: true },
-    { id: "Z-055", tipo: "caminante", nodo: "N-0014", visible: true },
+    { id: "Z-021", tipo: "dormido", nodo: selectedNodes[5], visible: true },
+    { id: "Z-055", tipo: "caminante", nodo: selectedNodes[6], visible: true },
   ],
 
   sobrevivientes: [
-    { id: "S-0089", nodo: "N-0013", refugioId: "R-001", activo: true },
-    { id: "S-0112", nodo: "N-0023", refugioId: "R-002", activo: true },
-    { id: "S-0031", nodo: "N-0008", refugioId: "R-001", activo: true },
-    { id: "S-0204", nodo: "N-0017", refugioId: "R-002", activo: true },
+    { id: "S-0089", nodo: selectedNodes[2], refugioId: "R-001", activo: true },
+    { id: "S-0112", nodo: selectedNodes[7], refugioId: "R-002", activo: true },
+    { id: "S-0031", nodo: selectedNodes[8], refugioId: "R-001", activo: true },
+    { id: "S-0204", nodo: selectedNodes[1], refugioId: "R-002", activo: true },
   ],
 
   refugios: [
-    { id: "R-001", nodo: "N-0001", capacidad: 100 },
-    { id: "R-002", nodo: "N-0025", capacidad: 80 },
-    { id: "R-003", nodo: "N-0005", capacidad: 60 },
-    { id: "R-004", nodo: "N-0021", capacidad: 45 },
+    { id: "R-001", nodo: selectedNodes[0], capacidad: 100 },
+    { id: "R-002", nodo: selectedNodes[5], capacidad: 80 },
+    { id: "R-003", nodo: selectedNodes[7], capacidad: 60 },
+    { id: "R-004", nodo: selectedNodes[8], capacidad: 45 },
   ],
 
-  aristasBloqueadas: [["N-0011", "N-0012"]],
+  aristasBloqueadas: [[streets[0].origen, streets[0].destino]],
   calles: streets,
   nodos: nodes,
   rutas: [],
@@ -79,7 +69,7 @@ const baseWorld = {
     {
       turno: 1,
       tipo: "calle",
-      descripcion: "Calle N-0011 → N-0012 bloqueada.",
+      descripcion: `Calle ${streets[0].origen} → ${streets[0].destino} bloqueada.`,
     },
     {
       turno: 0,

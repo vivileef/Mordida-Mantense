@@ -1,8 +1,11 @@
-const baseUrl = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
+import { normalizeMap, normalizeWorld } from "./geo";
+
+const baseUrl = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "");
 const requestTimeout = Number(import.meta.env.VITE_API_TIMEOUT_MS) || 5000;
+const apiKey = import.meta.env.VITE_API_KEY || "";
 
 async function request(path, options = {}) {
-  if (!baseUrl) throw new Error('VITE_API_BASE_URL no está configurada');
+  if (!baseUrl) throw new Error("VITE_API_BASE_URL no está configurada");
 
   const controller = new AbortController();
   const timeout = window.setTimeout(() => controller.abort(), requestTimeout);
@@ -13,12 +16,13 @@ async function request(path, options = {}) {
       ...options,
       signal: options.signal || controller.signal,
       headers: {
-        Accept: 'application/json',
+        Accept: "application/json",
+        ...(apiKey ? { "x-api-key": apiKey } : {}),
         ...options.headers,
       },
     });
   } catch (error) {
-    if (error.name === 'AbortError') {
+    if (error.name === "AbortError") {
       throw new Error(`Tiempo de espera agotado (${requestTimeout} ms)`);
     }
     throw new Error(`No se pudo contactar al backend: ${error.message}`);
@@ -27,13 +31,13 @@ async function request(path, options = {}) {
   }
 
   if (!response.ok) {
-    let detail = '';
+    let detail = "";
     try {
-      detail = (await response.json()).error || '';
+      detail = (await response.json()).error || "";
     } catch {
       // El servidor puede responder con un cuerpo no JSON.
     }
-    throw new Error(`HTTP ${response.status}${detail ? `: ${detail}` : ''}`);
+    throw new Error(`HTTP ${response.status}${detail ? `: ${detail}` : ""}`);
   }
 
   try {
@@ -51,31 +55,25 @@ async function request(path, options = {}) {
  * único punto que debe actualizarse antes de activar API REAL.
  */
 export async function fetchWorldState() {
-  const world = await request('/estado');
+  const world = await request("/estado");
 
-  if (
-    !world
-    || typeof world !== 'object'
-    || !Array.isArray(world.zombies)
-    || !Array.isArray(world.sobrevivientes)
-  ) {
-    throw new Error('GET /estado no tiene el formato esperado');
+  if (!world || typeof world !== "object" ||
+      !Array.isArray(world.zombies) ||
+      !Array.isArray(world.sobrevivientes ?? world.survivors)) {
+    throw new Error("GET /estado no tiene el formato esperado");
   }
 
-  return world;
+  return normalizeWorld(world);
 }
 
 export async function fetchMapState() {
-  const map = await request('/mapa');
-  if (
-    !map
-    || typeof map !== 'object'
-    || !Array.isArray(map.nodos)
-    || !Array.isArray(map.calles)
-  ) {
-    throw new Error('GET /mapa no tiene el formato esperado');
+  const map = await request("/mapa");
+  if (!map || typeof map !== "object" ||
+      !Array.isArray(map.nodos ?? map.nodes) ||
+      !Array.isArray(map.calles ?? map.streets)) {
+    throw new Error("GET /mapa no tiene el formato esperado");
   }
-  return map;
+  return normalizeMap(map);
 }
 
 /**
@@ -83,9 +81,9 @@ export async function fetchMapState() {
  * No se ejecuta automáticamente para todos los sobrevivientes.
  */
 export async function requestNextStep({ sobrevivienteId, nodoActual, turno }) {
-  return request('/paso', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+  return request("/paso", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ sobrevivienteId, nodoActual, turno }),
   });
 }

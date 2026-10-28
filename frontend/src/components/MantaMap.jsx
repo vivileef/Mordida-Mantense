@@ -1,7 +1,8 @@
 import { divIcon } from "leaflet";
-import { Fragment, useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import {
   Circle,
+  CircleMarker,
   MapContainer,
   Marker,
   Polyline,
@@ -11,6 +12,13 @@ import {
   useMap,
 } from "react-leaflet";
 import { center } from "../data/demoWorld";
+import localRoadNetwork from "../data/mantaRoadNetwork.json";
+import {
+  isBlocked,
+  resolveRoadMap,
+  routeGeometry,
+  streetGeometry,
+} from "../services/geo";
 
 const labels = {
   caminante: "Walker / Caminante",
@@ -74,6 +82,20 @@ function RecenterMap() {
     </button>
   );
 }
+function FitWorld({ positions }) {
+  const map = useMap();
+  const hasFittedWorld = useRef(false);
+  const positionsKey = positions.map(([lat, lng]) => `${lat},${lng}`).join(";");
+
+  useEffect(() => {
+    if (!hasFittedWorld.current && positions.length > 1) {
+      map.fitBounds(positions, { padding: [24, 24], maxZoom: 15 });
+      hasFittedWorld.current = true;
+    }
+  }, [map, positionsKey]);
+
+  return null;
+}
 function coordinates(world) {
   return new Map(
     (world?.nodos || []).map((node) => [node.id, [node.lat, node.lng]]),
@@ -82,96 +104,6 @@ function coordinates(world) {
 function middleOf(path) {
   if (path.length < 2) return path[0];
   return [(path[0][0] + path[1][0]) / 2, (path[0][1] + path[1][1]) / 2];
-}
-
-function geometryToPositions(geometry) {
-  if (!geometry) return [];
-
-  // GeoJSON Feature
-  if (geometry.type === "Feature") {
-    return geometryToPositions(geometry.geometry);
-  }
-
-  // GeoJSON LineString: las coordenadas vienen como [longitud, latitud].
-  if (geometry.type === "LineString") {
-    return (geometry.coordinates || [])
-      .filter(
-        (point) =>
-          Array.isArray(point) &&
-          point.length >= 2 &&
-          Number.isFinite(Number(point[0])) &&
-          Number.isFinite(Number(point[1])),
-      )
-      .map(([lng, lat]) => [Number(lat), Number(lng)]);
-  }
-
-  // GeoJSON MultiLineString: conserva cada tramo independiente.
-  if (geometry.type === "MultiLineString") {
-    return (geometry.coordinates || [])
-      .map((line) =>
-        line
-          .filter(
-            (point) =>
-              Array.isArray(point) &&
-              point.length >= 2 &&
-              Number.isFinite(Number(point[0])) &&
-              Number.isFinite(Number(point[1])),
-          )
-          .map(([lng, lat]) => [Number(lat), Number(lng)]),
-      )
-      .filter((line) => line.length > 1);
-  }
-
-  // Arreglos de puntos [lat, lng] o { lat, lng }.
-  const points = geometry.coordinates ?? geometry;
-
-  if (!Array.isArray(points)) return [];
-
-  return points
-    .map((point) => {
-      if (
-        Array.isArray(point) &&
-        point.length >= 2 &&
-        Number.isFinite(Number(point[0])) &&
-        Number.isFinite(Number(point[1]))
-      ) {
-        return [Number(point[0]), Number(point[1])];
-      }
-
-      if (
-        point &&
-        Number.isFinite(Number(point.lat)) &&
-        Number.isFinite(Number(point.lng))
-      ) {
-        return [Number(point.lat), Number(point.lng)];
-      }
-
-      return null;
-    })
-    .filter(Boolean);
-}
-
-function streetGeometry(street) {
-  return geometryToPositions(
-    street.geometry ??
-      street.geometria ??
-      street.coordinates ??
-      street.coordenadas,
-  );
-}
-
-function routeGeometry(route, nodeMap) {
-  const explicit = geometryToPositions(
-    route.geometry ?? route.geometria ?? route.coordinates ?? route.coordenadas,
-  );
-
-  if (explicit.length > 1) return explicit;
-
-  if (Array.isArray(route.nodes)) {
-    return route.nodes.map((id) => nodeMap.get(id)).filter(Boolean);
-  }
-
-  return [];
 }
 
 function AnimatedMarker({ position, duration = 2000, ...markerProps }) {
@@ -237,19 +169,96 @@ export default function MantaMap({
   onRefreshMap,
 }) {
   const [layers, setLayers] = useState({
+    streets: true,
     survivors: true,
     zombies: true,
     shelters: true,
     blocked: true,
     routes: true,
+    intersections: false,
   });
-  const nodeMap = coordinates(world);
-  const hasStreetGeometry = (world?.calles || []).some((street) => {
-    const path = streetGeometry(street);
+  const [selectedStreet, setSelectedStreet] = useState(null);
+  const resolvedApiMap = useMemo(
+    () => mode === "api"
+      ? resolveRoadMap(
+          { nodos: world?.nodos ?? [], calles: world?.calles ?? [] },
+          localRoadNetwork,
+        )
+      : null,
+    [mode, world?.nodos, world?.calles],
+  );
+  const mapWorld = mode === "api" && resolvedApiMap
+    ? { ...world, nodos: resolvedApiMap.nodos, calles: resolvedApiMap.calles }
+    : world;
+  const roadMapWarnings = resolvedApiMap?.warnings ?? [];
+  const nodeMap = coordinates(mapWorld);
+  const streetMap = new Map(
+    (mapWorld?.calles || []).map((street) => [`${street.origen}|${street.destino}`, street]),
+  );
+  const hasStreetGeometry = (mapWorld?.calles || []).some((street) => {
+    const path = streetGeometry(street, nodeMap, { allowEndpointFallback: mode !== "api" });
     return path.length > 1;
   });
   const hasRouteGeometry = (world?.rutas || []).some(
-    (route) => routeGeometry(route, nodeMap).length > 1,
+    (route) => routeGeometry(route, nodeMap, streetMap).length > 1,
+  );
+  const mapPositions = [...nodeMap.values()];
+  const invalidEntities = [
+    ...(world?.zombies || []).map((item) => ["Zombie", item.id, item.nodo]),
+    ...(world?.sobrevivientes || []).map((item) => ["Sobreviviente", item.id, item.nodo]),
+    ...(world?.refugios || []).map((item) => ["Refugio", item.id, item.nodo ?? item.node]),
+  ].filter(([, , node]) => node == null || !nodeMap.has(String(node)));
+  const routeDiagnostics = (world?.rutas || []).flatMap((route) => {
+    const routeId = route.survivorId ?? route.sobrevivienteId ?? "Ruta sin identificador";
+    const routeNodes = Array.isArray(route.nodes ?? route.nodos)
+      ? route.nodes ?? route.nodos
+      : [];
+    const routeStreets = Array.isArray(route.streets ?? route.calles)
+      ? route.streets ?? route.calles
+      : [];
+    const streetNodeIds = routeStreets.flatMap((street) => [
+      street.origen ?? street.origin ?? street.from,
+      street.destino ?? street.destination ?? street.to,
+    ]);
+    const referencedNodes = [...routeNodes, ...streetNodeIds]
+      .filter((node) => node != null)
+      .map(String);
+    const missingNodes = [...new Set(referencedNodes.filter((node) => !nodeMap.has(node)))];
+    const missingSegments = [];
+
+    if (missingNodes.length === 0 && routeNodes.length > 1) {
+      for (let index = 0; index < routeNodes.length - 1; index += 1) {
+        const origin = String(routeNodes[index]);
+        const destination = String(routeNodes[index + 1]);
+        if (!streetMap.has(`${origin}|${destination}`) && !streetMap.has(`${destination}|${origin}`)) {
+          missingSegments.push(`${origin} → ${destination}`);
+        }
+      }
+    }
+
+    if (missingNodes.length === 0 && routeNodes.length > 1) {
+      for (let index = 0; index < routeNodes.length - 1; index += 1) {
+        const origin = String(routeNodes[index]);
+        const destination = String(routeNodes[index + 1]);
+        const hasConnection =
+          streetMap.has(`${origin}|${destination}`) ||
+          streetMap.has(`${destination}|${origin}`);
+        if (
+          hasConnection &&
+          routeGeometry({ nodes: [origin, destination] }, nodeMap, streetMap).length < 2
+        ) {
+          missingSegments.push(`${origin} a ${destination} (sin geometría vial)`);
+        }
+      }
+    }
+
+    return [
+      ...(missingNodes.length ? [{ routeId, message: `nodos ausentes: ${missingNodes.join(", ")}` }] : []),
+      ...(missingSegments.length ? [{ routeId, message: `tramos incompatibles con el mapa: ${missingSegments.join(", ")}` }] : []),
+    ];
+  });
+  const routesWithoutGeometry = (world?.rutas || []).filter(
+    (route) => routeGeometry(route, nodeMap, streetMap).length < 2,
   );
   const toggleLayer = (layer) =>
     setLayers((current) => ({ ...current, [layer]: !current[layer] }));
@@ -267,20 +276,46 @@ export default function MantaMap({
           {stale ? " · DESACTUALIZADOS" : ""}
         </small>
       </div>
-      {(!hasStreetGeometry || (layers.routes && !hasRouteGeometry)) && (
+      {(!hasStreetGeometry ||
+        (layers.routes &&
+          (world?.rutas?.length ?? 0) > 0 &&
+          !hasRouteGeometry &&
+          routeDiagnostics.length === 0)) && (
         <div className="map-notice">
           {!hasStreetGeometry
-            ? "Calles del grafo sin geometría: se muestra el mapa OSM."
-            : "Rutas sin geometría vial: trazado pendiente del backend."}
+            ? "No hay calles georreferenciadas válidas en los datos recibidos."
+            : "No se pudieron trazar una o más rutas con las calles recibidas."}
+        </div>
+      )}
+      {invalidEntities.length > 0 && (
+        <div className="map-notice map-notice--error">
+          Entidades omitidas: {invalidEntities.map(([type, id, node]) => `${type} ${id} (nodo ${node ?? "sin ID"})`).join("; ")}. El nodo no existe en el mapa.
+        </div>
+      )}
+      {roadMapWarnings.length > 0 && (
+        <div className="map-notice map-notice--error">
+          Compatibilidad de la red API: {roadMapWarnings.join(" ")}
+        </div>
+      )}
+      {routeDiagnostics.length > 0 && (
+        <div className="map-notice map-notice--error">
+          Rutas incompletas: {routeDiagnostics.map(({ routeId, message }) => `${routeId}: ${message}`).join("; ")}.
+        </div>
+      )}
+      {layers.routes && routesWithoutGeometry.length > 0 && routeDiagnostics.length === 0 && (
+        <div className="map-notice map-notice--error">
+          Sin trazado vial para: {routesWithoutGeometry.map((route) => route.survivorId ?? route.sobrevivienteId ?? "ruta sin identificador").join(", ")}. Verifica que sus tramos tengan geometría en el mapa.
         </div>
       )}
       <div className="map-controls" aria-label="Capas del mapa">
         {[
+          ["streets", "Calles"],
           ["survivors", "Sobrevivientes"],
           ["zombies", "Zombies"],
           ["shelters", "Refugios"],
           ["routes", "Rutas"],
           ["blocked", "Calles bloqueadas"],
+          ["intersections", "Intersecciones"],
         ].map(([layer, label]) => (
           <button
             className={layers[layer] ? "is-visible" : ""}
@@ -313,13 +348,11 @@ export default function MantaMap({
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
         <RecenterMap />
-        {(world?.calles || []).map((street, index) => {
-          const path = streetGeometry(street);
-          const blocked = (world.aristasBloqueadas || []).some(
-            (edge) =>
-              edge.includes(street.origen) && edge.includes(street.destino),
-          );
-          if (blocked && !layers.blocked) return null;
+        <FitWorld positions={mapPositions} />
+        {(mapWorld?.calles || []).map((street, index) => {
+          const path = streetGeometry(street, nodeMap, { allowEndpointFallback: mode !== "api" });
+          const blocked = isBlocked(world, street);
+          if (blocked ? !layers.blocked : !layers.streets) return null;
           if (!path.length) return null;
           return (
             <Fragment key={`street-${index}`}>
@@ -327,11 +360,30 @@ export default function MantaMap({
                 positions={path}
                 pathOptions={{
                   color: blocked ? "#FF9F1C" : "#3B2A6B",
-                  weight: blocked ? 5 : 2,
+                  weight: selectedStreet === street ? 6 : blocked ? 5 : 2,
                   dashArray: blocked ? "8 8" : undefined,
-                  opacity: blocked ? 0.95 : 0.75,
+                  opacity: selectedStreet === street ? 1 : blocked ? 0.95 : 0.75,
                 }}
-              />
+                eventHandlers={{ click: () => setSelectedStreet(street) }}
+              >
+                <Tooltip sticky>{street.nombre || "Calle sin nombre"}</Tooltip>
+                <Popup>
+                  <b>{street.nombre || "Calle sin nombre"}</b>
+                  <br />
+                  {street.origen} → {street.destino}
+                  <br />
+                  Tipo: {street.tipo || "calle"}
+                  {street.distancia_m ? (
+                    <>
+                      <br />
+                      Distancia: {Math.round(street.distancia_m)} m
+                    </>
+                  ) : null}
+                  <br />
+                  Estado: {blocked ? "bloqueada" : "transitable"}
+                  {selectedStreet === street ? " · seleccionada" : ""}
+                </Popup>
+              </Polyline>
               {blocked && path.length > 1 && (
                 <AnimatedMarker
                   position={middleOf(path)}
@@ -352,7 +404,7 @@ export default function MantaMap({
         })}
         {layers.routes &&
           (world?.rutas || []).map((route) => {
-            const path = routeGeometry(route, nodeMap);
+            const path = routeGeometry(route, nodeMap, streetMap);
             if (!path.length) return null;
             const recommended =
               route.recomendada === true ||
@@ -373,6 +425,28 @@ export default function MantaMap({
                   dashArray: route.status === "invalida" ? "5 8" : undefined,
                 }}
               />
+            );
+          })}
+        {layers.intersections &&
+          (mapWorld?.nodos || []).map((node) => {
+            const position = nodeMap.get(node.id);
+            if (!position) return null;
+            return (
+              <CircleMarker
+                key={`node-${node.id}`}
+                center={position}
+                radius={4}
+                pathOptions={{ color: "#54D6DF", fillColor: "#0E151A", fillOpacity: 1, weight: 2 }}
+              >
+                <Tooltip>{node.id}</Tooltip>
+                <Popup>
+                  <b>{node.id}</b>
+                  <br />
+                  {node.nombre || "Intersección"}
+                  <br />
+                  Coordenadas: {position[0].toFixed(6)}, {position[1].toFixed(6)}
+                </Popup>
+              </CircleMarker>
             );
           })}
         {layers.zombies &&
@@ -454,7 +528,8 @@ export default function MantaMap({
           })}
         {layers.shelters &&
           (world?.refugios || []).map((shelter) => {
-            const position = nodeMap.get(shelter.nodo);
+            const shelterNode = shelter.nodo ?? shelter.node;
+            const position = nodeMap.get(shelterNode);
             return position ? (
               <Marker
                 position={position}
@@ -467,13 +542,13 @@ export default function MantaMap({
                   <br />
                   Tipo: refugio seguro
                   <br />
-                  Ubicación: {shelter.nodo}
+                  Ubicación: {shelterNode}
                   <br />
                   Estado: disponible
-                  {shelter.capacidad ? (
+                  {(shelter.capacidad ?? shelter.capacity) != null ? (
                     <>
                       <br />
-                      Capacidad: {shelter.capacidad}
+                      Capacidad: {shelter.capacidad ?? shelter.capacity}
                     </>
                   ) : null}
                 </Popup>

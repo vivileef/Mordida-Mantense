@@ -51,6 +51,16 @@ class CityGraph:
                     "distancia_m": edge.distance_m,
                     "tipo": edge.street_type,
                     "nombre": edge.name,
+                    **(
+                        {
+                            "geometry": {
+                                "type": "LineString",
+                                "coordinates": [list(point) for point in edge.geometry],
+                            }
+                        }
+                        if edge.geometry
+                        else {}
+                    ),
                 }
                 for source, edges in self.edges.items()
                 for edge in edges
@@ -81,6 +91,11 @@ class CityGraph:
                 distance_m=float(item["distancia_m"]),
                 street_type=str(item["tipo"]),
                 name=str(item.get("nombre", "calle sin nombre")),
+                geometry=tuple(
+                    (float(point[0]), float(point[1]))
+                    for point in item.get("geometry", {}).get("coordinates", [])
+                    if isinstance(point, (list, tuple)) and len(point) >= 2
+                ),
             )
             edges[source].append(edge)
         return cls(nodes, edges, node_names)

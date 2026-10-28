@@ -104,6 +104,7 @@ python tools\grafo-manta\generar_grafo.py `
 
 - `tools/grafo-manta/manta.graphml`: grafo original descargado de OSM y serializado por OSMnx.
 - `tools/grafo-manta/manta.json`: exportación del grafo en el formato documental del proyecto.
+- `tools/grafo-manta/manta.osm`: snapshot XML local usado para reproducir la exportación del DEMO.
 
 ## Estructura de `manta.json`
 
@@ -119,7 +120,11 @@ python tools\grafo-manta\generar_grafo.py `
       "destino": "N-0002",
       "distancia_m": 128.5,
       "tipo": "primary",
-      "sentido": "bidireccional"
+      "sentido": "bidireccional",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [[-80.709, -0.958], [-80.708, -0.959]]
+      }
     }
   ]
 }
@@ -137,7 +142,7 @@ Este esquema conserva el contrato actual del proyecto y añade `sentido` para do
   usa OSMnx. La comprobación mínima confirma el intérprete, pero no garantiza
   que una consulta posterior grande no sea rechazada por saturación.
 - Si la consulta falla, la descarga no debe tratarse como exitosa.
-- El trabajo real de rutas sobre calles requiere confirmar el formato final con el backend.
+- La exportación conserva la geometría de cada way para que el frontend pueda dibujar curvas reales en lugar de unir nodos con líneas de una cuadrícula.
 - El grafo puede resultar grande si se descarga la ciudad completa; por eso se ofrece el límite por `--bbox`.
 - La información de sentido de circulación depende de la calidad de los datos de OSM.
 
@@ -151,6 +156,16 @@ Cuando se quiera actualizar la topología:
 3. Revisar `manta.graphml` y `manta.json`.
 4. Confirmar que la validación de ruta pase para al menos una prueba representativa.
 5. Documentar cualquier cambio del contrato antes de integrarlo con el frontend o el backend.
+
+## Snapshot integrado en DEMO
+
+El snapshot actualmente incluido se obtuvo de la API de datos de OpenStreetMap
+para el bbox `-80.715,-0.975,-80.700,-0.960` (Manta urbana). Contiene 709
+nodos y 2.232 aristas dirigidas, todas con geometría LineString. El frontend
+lo carga desde `frontend/src/data/mantaRoadNetwork.json` y el backend lo carga
+desde `tools/grafo-manta/manta.json` cuando no se define `MANTA_GRAPH_PATH`.
+El XML local permite regenerar el JSON sin depender de una consulta durante el
+arranque, aunque los datos OSM deben actualizarse periódicamente.
 
 ## Qué queda pendiente para integración
 

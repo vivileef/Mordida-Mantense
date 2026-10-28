@@ -2,7 +2,7 @@
 
 Proyecto de **Brujas de la Nube** para SpookyThon 2026, Track A: **Escape de Manta Zombie**.
 
-Centro de operaciones visual para el reto **Escape de Manta Zombie**. Está construido con React, Vite, Leaflet y React Leaflet. El modo inicial es `DEMO`: sus posiciones, rutas y eventos son ficticios y están marcados en la interfaz.
+Centro de operaciones visual para el reto **Escape de Manta Zombie**. Está construido con React, Vite, Leaflet y React Leaflet. El modo inicial es `DEMO`: el estado de zombies, sobrevivientes, refugios y bloqueos es simulado, pero la red vial local proviene de un snapshot verificable de OpenStreetMap.
 
 ## 1. Crear y ejecutar en Windows PowerShell
 
@@ -35,7 +35,7 @@ Al abrir la aplicación se muestra `DEMO · DATOS SIMULADOS`. Cada dos segundos 
 - **DEMO/API REAL** cambia de fuente sin mezclar los estados.
 - Un clic sobre un sobreviviente o una tarjeta de ruta selecciona su ruta y muestra sus detalles.
 
-Las posiciones del DEMO son coordenadas ficticias sobre el área de Manta; no representan una observación real.
+Las posiciones del DEMO son entidades ficticias ubicadas sobre nodos de la red vial local; no representan personas o amenazas reales.
 
 ## 3. Conectar el backend
 
@@ -79,8 +79,9 @@ Después de validar localmente, sube el contenido de `dist` a un bucket S3 confi
 - El mapa base depende de los tiles públicos de OpenStreetMap y necesita internet.
 - El backend actual no expone WebSocket; por eso API REAL usa polling configurable.
 - El servidor local puede exigir `x-api-key`; no se configura esa clave en el frontend porque cualquier variable `VITE_*` queda expuesta en el bundle. En un despliegue real se recomienda colocar autenticación y CORS en la capa de API/gateway o mediante un proxy seguro.
-- El mapa base utiliza los tiles públicos de OpenStreetMap centrados inicialmente en `-0.9677, -80.7089`. Las conexiones del grafo y las rutas solo se dibujan como líneas cuando incluyen geometría vial; no se convierten automáticamente pares de nodos en líneas rectas.
+- El mapa base utiliza los tiles públicos de OpenStreetMap y el DEMO carga `src/data/mantaRoadNetwork.json`, derivado de `tools/grafo-manta/manta.osm` para el bbox `-80.715,-0.975,-80.700,-0.960`. La red contiene 709 nodos y 2.232 aristas con geometrías LineString.
+- Los datos OSM se distribuyen bajo la licencia ODbL; conserva la atribución de OpenStreetMap. Las geometrías GeoJSON usan `[longitud, latitud]` y Leaflet recibe `[latitud, longitud]`.
 
 ### Información requerida del backend
 
-El adaptador principal está en `src/services/simulatorApi.js`. El frontend espera que `GET /estado` incluya al menos `turno`, `zombies`, `sobrevivientes`, `refugios`, `aristasBloqueadas`, `eventos` y `nodos`. Cada nodo debe tener `id`, `lat` y `lng`; cada zombie debe tener `id`, `tipo` y `nodo`; cada sobreviviente debe tener `id`, `nodo`, `refugioId` y `activo`. Además, `GET /mapa` debe incluir `nodos` y `calles` con `origen`, `destino` y una geometría de vía (`geometry.coordinates` GeoJSON como `[longitud, latitud]`, o una lista equivalente de puntos). Para dibujar rutas reales, `GET /estado` debe incluir `rutas` con al menos `survivorId`, `geometry`/`coordinates` de la ruta siguiendo las calles y, si aplica, `status`, origen, destino y refugio asignado. `POST /paso` por sí solo devuelve un siguiente nodo y no proporciona geometría suficiente para pintar una ruta. Si el backend compartido utiliza otros nombres o todavía no entrega geometría, el panel lo indica y no reutiliza rutas DEMO. El equipo debe acordar y completar el adaptador en ese archivo antes de activar API REAL.
+El adaptador principal está en `src/services/simulatorApi.js`. El frontend espera que `GET /estado` incluya al menos `turno`, `zombies`, `sobrevivientes`, `refugios`, `aristasBloqueadas`, `eventos` y `nodos`. Cada nodo debe tener `id`, `lat` y `lng`; cada zombie debe tener `id`, `tipo` y `nodo`; cada sobreviviente debe tener `id`, `nodo`, `refugioId` y `activo`. Además, `GET /mapa` debe incluir `nodos` y `calles` con `origen` y `destino`; la geometría de vía es opcional (`geometry.coordinates` GeoJSON como `[longitud, latitud]`, o una lista equivalente de puntos). Para dibujar rutas reales, `GET /estado` debe incluir `rutas` con al menos `survivorId` y `nodes`/`nodos`, o una geometría de ruta siguiendo las calles y, si aplica, `status`, origen, destino y refugio asignado. `POST /paso` por sí solo devuelve un siguiente nodo y no proporciona geometría suficiente para pintar una ruta completa. El adaptador normaliza las variantes `node`/`nodo`, `capacity`/`capacidad`, `geometry`/`geometria`, `nodes`/`nodos`, y muestra un error cuando faltan identificadores o coordenadas válidas.

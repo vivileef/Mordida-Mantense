@@ -42,6 +42,12 @@ def make_node_id(index: int) -> str:
     return f"N-{index:04d}"
 
 
+def tag_value(value: Any, default: str) -> str:
+    if isinstance(value, (list, tuple)):
+        return ", ".join(str(item) for item in value)
+    return str(value) if value not in (None, "") else default
+
+
 def check_overpass_endpoint(overpass_url: str, timeout: float = 15.0) -> tuple[bool, str]:
     """Comprueba el intérprete Overpass con una consulta mínima y acotada."""
     parsed = urlparse(overpass_url)
@@ -125,7 +131,16 @@ def export_json(graph: Any, output_path: Path) -> dict[str, Any]:
         distance = float(data.get("length", 0.0))
         if distance <= 0:
             distance = 0.0
-        way_type = str(data.get("highway", "unknown"))
+        way_type = tag_value(data.get("highway"), "unknown")
+        geometry = data.get("geometry")
+        geometry_coordinates = (
+            [[round(float(x), 7), round(float(y), 7)] for x, y in geometry.coords]
+            if geometry is not None
+            else [
+                [round(float(graph.nodes[source_osmid]["x"]), 7), round(float(graph.nodes[source_osmid]["y"]), 7)],
+                [round(float(graph.nodes[target_osmid]["x"]), 7), round(float(graph.nodes[target_osmid]["y"]), 7)],
+            ]
+        )
         oneway = bool(data.get("oneway", False))
         if oneway:
             direction = "sentido_unico"
@@ -137,7 +152,12 @@ def export_json(graph: Any, output_path: Path) -> dict[str, Any]:
                 "destino": target_id,
                 "distancia_m": round(distance, 2),
                 "tipo": way_type,
+                "nombre": tag_value(data.get("name"), "calle sin nombre"),
                 "sentido": direction,
+                "geometry": {
+                    "type": "LineString",
+                    "coordinates": geometry_coordinates,
+                },
             }
         )
 
