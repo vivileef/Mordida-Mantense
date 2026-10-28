@@ -1,5 +1,5 @@
 import { divIcon } from "leaflet";
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, memo, useEffect, useMemo, useRef, useState } from "react";
 import {
   Circle,
   CircleMarker,
@@ -19,16 +19,22 @@ import {
   routeGeometry,
   streetGeometry,
 } from "../services/geo";
+import {
+  createDisplayNames,
+  displayEntityName,
+  intersectionDisplayName,
+  streetDisplayName,
+} from "../utils/presentation";
 
 const labels = {
-  caminante: "Walker / Caminante",
-  walker: "Walker / Caminante",
-  corredor: "Runner / Corredor",
-  runner: "Runner / Corredor",
-  horda: "Horde / Horda",
-  horde: "Horde / Horda",
-  dormido: "Dormant / Dormido",
-  dormant: "Dormant / Dormido",
+  caminante: "Caminante",
+  walker: "Caminante",
+  corredor: "Corredor",
+  runner: "Runner",
+  horda: "Horda",
+  horde: "Horde",
+  dormido: "Dormido",
+  dormant: "Dormido",
 };
 const iconShapes = {
   survivor:
@@ -158,7 +164,7 @@ function AnimatedMarker({ position, duration = 2000, ...markerProps }) {
   return <Marker {...markerProps} position={displayPosition} />;
 }
 
-export default function MantaMap({
+const MantaMap = memo(function MantaMap({
   world,
   selectedId,
   onSelect,
@@ -179,42 +185,74 @@ export default function MantaMap({
   });
   const [selectedStreet, setSelectedStreet] = useState(null);
   const resolvedApiMap = useMemo(
-    () => mode === "api"
-      ? resolveRoadMap(
-          { nodos: world?.nodos ?? [], calles: world?.calles ?? [] },
-          localRoadNetwork,
-        )
-      : null,
+    () =>
+      mode === "api"
+        ? resolveRoadMap(
+            { nodos: world?.nodos ?? [], calles: world?.calles ?? [] },
+            localRoadNetwork,
+          )
+        : null,
     [mode, world?.nodos, world?.calles],
   );
-  const mapWorld = mode === "api" && resolvedApiMap
-    ? { ...world, nodos: resolvedApiMap.nodos, calles: resolvedApiMap.calles }
-    : world;
+  const mapWorld =
+    mode === "api" && resolvedApiMap
+      ? { ...world, nodos: resolvedApiMap.nodos, calles: resolvedApiMap.calles }
+      : world;
   const roadMapWarnings = resolvedApiMap?.warnings ?? [];
-  const nodeMap = coordinates(mapWorld);
-  const streetMap = new Map(
-    (mapWorld?.calles || []).map((street) => [`${street.origen}|${street.destino}`, street]),
+  const displayNames = useMemo(() => createDisplayNames(world), [
+    world?.zombies,
+    world?.sobrevivientes,
+    world?.refugios,
+  ]);
+  const nodeMap = useMemo(() => coordinates(mapWorld), [mapWorld?.nodos]);
+  const streetMap = useMemo(
+    () => new Map(
+      (mapWorld?.calles || []).map((street) => [
+        `${street.origen}|${street.destino}`,
+        street,
+      ]),
+    ),
+    [mapWorld?.calles],
   );
-  const hasStreetGeometry = (mapWorld?.calles || []).some((street) => {
-    const path = streetGeometry(street, nodeMap, { allowEndpointFallback: mode !== "api" });
-    return path.length > 1;
-  });
-  const hasRouteGeometry = (world?.rutas || []).some(
-    (route) => routeGeometry(route, nodeMap, streetMap).length > 1,
+  const hasStreetGeometry = useMemo(
+    () => (mapWorld?.calles || []).some((street) =>
+      streetGeometry(street, nodeMap).length > 1,
+    ),
+    [mapWorld?.calles, nodeMap],
   );
-  const mapPositions = [...nodeMap.values()];
-  const invalidEntities = [
-    ...(world?.zombies || []).map((item) => ["Zombie", item.id, item.nodo]),
-    ...(world?.sobrevivientes || []).map((item) => ["Sobreviviente", item.id, item.nodo]),
-    ...(world?.refugios || []).map((item) => ["Refugio", item.id, item.nodo ?? item.node]),
-  ].filter(([, , node]) => node == null || !nodeMap.has(String(node)));
-  const routeDiagnostics = (world?.rutas || []).flatMap((route) => {
-    const routeId = route.survivorId ?? route.sobrevivienteId ?? "Ruta sin identificador";
+  const hasRouteGeometry = useMemo(
+    () => (world?.rutas || []).some(
+      (route) => routeGeometry(route, nodeMap, streetMap).length > 1,
+    ),
+    [world?.rutas, nodeMap, streetMap],
+  );
+  const mapPositions = useMemo(() => [...nodeMap.values()], [nodeMap]);
+  const invalidEntities = useMemo(() => [
+    ...(world?.zombies || []).map((item) => ["zombies", item.id, item.nodo]),
+    ...(world?.sobrevivientes || []).map((item) => [
+      "survivors",
+      item.id,
+      item.nodo,
+    ]),
+    ...(world?.refugios || []).map((item) => [
+      "shelters",
+      item.id,
+      item.nodo ?? item.node,
+    ]),
+  ].filter(([, , node]) => node == null || !nodeMap.has(String(node))), [
+    world?.zombies,
+    world?.sobrevivientes,
+    world?.refugios,
+    nodeMap,
+  ]);
+  const routeDiagnostics = useMemo(() => (world?.rutas || []).flatMap((route) => {
+    const routeId =
+      route.survivorId ?? route.sobrevivienteId ?? "Ruta sin identificador";
     const routeNodes = Array.isArray(route.nodes ?? route.nodos)
-      ? route.nodes ?? route.nodos
+      ? (route.nodes ?? route.nodos)
       : [];
     const routeStreets = Array.isArray(route.streets ?? route.calles)
-      ? route.streets ?? route.calles
+      ? (route.streets ?? route.calles)
       : [];
     const streetNodeIds = routeStreets.flatMap((street) => [
       street.origen ?? street.origin ?? street.from,
@@ -223,14 +261,19 @@ export default function MantaMap({
     const referencedNodes = [...routeNodes, ...streetNodeIds]
       .filter((node) => node != null)
       .map(String);
-    const missingNodes = [...new Set(referencedNodes.filter((node) => !nodeMap.has(node)))];
+    const missingNodes = [
+      ...new Set(referencedNodes.filter((node) => !nodeMap.has(node))),
+    ];
     const missingSegments = [];
 
     if (missingNodes.length === 0 && routeNodes.length > 1) {
       for (let index = 0; index < routeNodes.length - 1; index += 1) {
         const origin = String(routeNodes[index]);
         const destination = String(routeNodes[index + 1]);
-        if (!streetMap.has(`${origin}|${destination}`) && !streetMap.has(`${destination}|${origin}`)) {
+        if (
+          !streetMap.has(`${origin}|${destination}`) &&
+          !streetMap.has(`${destination}|${origin}`)
+        ) {
           missingSegments.push(`${origin} → ${destination}`);
         }
       }
@@ -245,20 +288,40 @@ export default function MantaMap({
           streetMap.has(`${destination}|${origin}`);
         if (
           hasConnection &&
-          routeGeometry({ nodes: [origin, destination] }, nodeMap, streetMap).length < 2
+          routeGeometry({ nodes: [origin, destination] }, nodeMap, streetMap)
+            .length < 2
         ) {
-          missingSegments.push(`${origin} a ${destination} (sin geometría vial)`);
+          missingSegments.push(
+            `${origin} a ${destination} (sin geometría vial)`,
+          );
         }
       }
     }
 
     return [
-      ...(missingNodes.length ? [{ routeId, message: `nodos ausentes: ${missingNodes.join(", ")}` }] : []),
-      ...(missingSegments.length ? [{ routeId, message: `tramos incompatibles con el mapa: ${missingSegments.join(", ")}` }] : []),
+      ...(missingNodes.length
+        ? [
+            {
+              routeId,
+              message: `${missingNodes.length} intersección(es) no están en el mapa`,
+            },
+          ]
+        : []),
+      ...(missingSegments.length
+        ? [
+            {
+              routeId,
+              message: `${missingSegments.length} tramo(s) no tienen una calle compatible`,
+            },
+          ]
+        : []),
     ];
-  });
-  const routesWithoutGeometry = (world?.rutas || []).filter(
-    (route) => routeGeometry(route, nodeMap, streetMap).length < 2,
+  }), [world?.rutas, nodeMap, streetMap]);
+  const routesWithoutGeometry = useMemo(
+    () => (world?.rutas || []).filter(
+      (route) => routeGeometry(route, nodeMap, streetMap).length < 2,
+    ),
+    [world?.rutas, nodeMap, streetMap],
   );
   const toggleLayer = (layer) =>
     setLayers((current) => ({ ...current, [layer]: !current[layer] }));
@@ -287,9 +350,30 @@ export default function MantaMap({
             : "No se pudieron trazar una o más rutas con las calles recibidas."}
         </div>
       )}
+      {mode === "api" && layers.routes && (world?.rutas?.length ?? 0) === 0 && (
+        <div className="map-notice">El backend no publicó rutas seguras en este estado.</div>
+      )}
+      {mode === "api" && layers.blocked && (world?.aristasBloqueadas?.length ?? 0) === 0 && (
+        <div className="map-notice">El backend no informa calles bloqueadas en este estado.</div>
+      )}
       {invalidEntities.length > 0 && (
         <div className="map-notice map-notice--error">
-          Entidades omitidas: {invalidEntities.map(([type, id, node]) => `${type} ${id} (nodo ${node ?? "sin ID"})`).join("; ")}. El nodo no existe en el mapa.
+          Entidades omitidas:{" "}
+          {invalidEntities
+            .map(([kind, id]) =>
+              displayEntityName(
+                displayNames,
+                kind,
+                id,
+                kind === "survivors"
+                  ? "Sobreviviente"
+                  : kind === "zombies"
+                    ? "Zombie"
+                    : "Refugio",
+              ),
+            )
+            .join("; ")}
+          . Su ubicación no está disponible en el mapa.
         </div>
       )}
       {roadMapWarnings.length > 0 && (
@@ -299,14 +383,34 @@ export default function MantaMap({
       )}
       {routeDiagnostics.length > 0 && (
         <div className="map-notice map-notice--error">
-          Rutas incompletas: {routeDiagnostics.map(({ routeId, message }) => `${routeId}: ${message}`).join("; ")}.
+          Rutas incompletas:{" "}
+          {routeDiagnostics
+            .map(
+              ({ routeId, message }) =>
+                `${displayEntityName(displayNames, "survivors", routeId, "Sobreviviente")}: ${message}`,
+            )
+            .join("; ")}
+          .
         </div>
       )}
-      {layers.routes && routesWithoutGeometry.length > 0 && routeDiagnostics.length === 0 && (
-        <div className="map-notice map-notice--error">
-          Sin trazado vial para: {routesWithoutGeometry.map((route) => route.survivorId ?? route.sobrevivienteId ?? "ruta sin identificador").join(", ")}. Verifica que sus tramos tengan geometría en el mapa.
-        </div>
-      )}
+      {layers.routes &&
+        routesWithoutGeometry.length > 0 &&
+        routeDiagnostics.length === 0 && (
+          <div className="map-notice map-notice--error">
+            No hay trazado vial para{" "}
+            {routesWithoutGeometry
+              .map((route) =>
+                displayEntityName(
+                  displayNames,
+                  "survivors",
+                  route.survivorId ?? route.sobrevivienteId,
+                  "un sobreviviente",
+                ),
+              )
+              .join(", ")}
+            . Verifica que sus tramos tengan geometría en el mapa.
+          </div>
+        )}
       <div className="map-controls" aria-label="Capas del mapa">
         {[
           ["streets", "Calles"],
@@ -350,7 +454,7 @@ export default function MantaMap({
         <RecenterMap />
         <FitWorld positions={mapPositions} />
         {(mapWorld?.calles || []).map((street, index) => {
-          const path = streetGeometry(street, nodeMap, { allowEndpointFallback: mode !== "api" });
+          const path = streetGeometry(street, nodeMap);
           const blocked = isBlocked(world, street);
           if (blocked ? !layers.blocked : !layers.streets) return null;
           if (!path.length) return null;
@@ -362,15 +466,14 @@ export default function MantaMap({
                   color: blocked ? "#FF9F1C" : "#3B2A6B",
                   weight: selectedStreet === street ? 6 : blocked ? 5 : 2,
                   dashArray: blocked ? "8 8" : undefined,
-                  opacity: selectedStreet === street ? 1 : blocked ? 0.95 : 0.75,
+                  opacity:
+                    selectedStreet === street ? 1 : blocked ? 0.95 : 0.75,
                 }}
                 eventHandlers={{ click: () => setSelectedStreet(street) }}
               >
-                <Tooltip sticky>{street.nombre || "Calle sin nombre"}</Tooltip>
+                <Tooltip sticky>{streetDisplayName(street)}</Tooltip>
                 <Popup>
-                  <b>{street.nombre || "Calle sin nombre"}</b>
-                  <br />
-                  {street.origen} → {street.destino}
+                  <b>{streetDisplayName(street)}</b>
                   <br />
                   Tipo: {street.tipo || "calle"}
                   {street.distancia_m ? (
@@ -391,11 +494,9 @@ export default function MantaMap({
                 >
                   <Tooltip>Calle bloqueada</Tooltip>
                   <Popup>
-                    <b>Calle bloqueada</b>
+                    <b>{streetDisplayName(street)}</b>
                     <br />
-                    Conexión: {street.origen} → {street.destino}
-                    <br />
-                    Estado: no disponible
+                    Calle bloqueada · no disponible
                   </Popup>
                 </AnimatedMarker>
               )}
@@ -436,15 +537,18 @@ export default function MantaMap({
                 key={`node-${node.id}`}
                 center={position}
                 radius={4}
-                pathOptions={{ color: "#54D6DF", fillColor: "#0E151A", fillOpacity: 1, weight: 2 }}
+                pathOptions={{
+                  color: "#54D6DF",
+                  fillColor: "#0E151A",
+                  fillOpacity: 1,
+                  weight: 2,
+                }}
               >
-                <Tooltip>{node.id}</Tooltip>
+                <Tooltip>
+                  {intersectionDisplayName(node, mapWorld?.calles || [])}
+                </Tooltip>
                 <Popup>
-                  <b>{node.id}</b>
-                  <br />
-                  {node.nombre || "Intersección"}
-                  <br />
-                  Coordenadas: {position[0].toFixed(6)}, {position[1].toFixed(6)}
+                  <b>{intersectionDisplayName(node, mapWorld?.calles || [])}</b>
                 </Popup>
               </CircleMarker>
             );
@@ -478,14 +582,33 @@ export default function MantaMap({
                     icon={entityIcon(kind, labels[type] || zombie.tipo)}
                   >
                     <Tooltip>
-                      {labels[type] || zombie.tipo}: {zombie.id}
+                      {displayEntityName(
+                        displayNames,
+                        "zombies",
+                        zombie.id,
+                        "Zombie",
+                      )}
+                      : {labels[type] || zombie.tipo}
                     </Tooltip>
                     <Popup>
-                      <b>{zombie.id}</b>
+                      <b>
+                        {displayEntityName(
+                          displayNames,
+                          "zombies",
+                          zombie.id,
+                          "Zombie",
+                        )}
+                      </b>
                       <br />
                       Tipo: {labels[type] || zombie.tipo}
                       <br />
-                      Ubicación: {zombie.nodo}
+                      Ubicación:{" "}
+                      {intersectionDisplayName(
+                        mapWorld?.nodos?.find(
+                          (node) => node.id === zombie.nodo,
+                        ),
+                        mapWorld?.calles || [],
+                      )}
                       {zombie.cantidad ? (
                         <>
                           <br />
@@ -511,17 +634,41 @@ export default function MantaMap({
                 key={survivor.id}
                 eventHandlers={{ click: () => onSelect(survivor.id) }}
               >
-                <Tooltip>Sobreviviente: {survivor.id}</Tooltip>
+                <Tooltip>
+                  {displayEntityName(
+                    displayNames,
+                    "survivors",
+                    survivor.id,
+                    "Sobreviviente",
+                  )}
+                </Tooltip>
                 <Popup>
-                  <b>{survivor.id}</b>
+                  <b>
+                    {displayEntityName(
+                      displayNames,
+                      "survivors",
+                      survivor.id,
+                      "Sobreviviente",
+                    )}
+                  </b>
                   <br />
                   Tipo: sobreviviente
                   <br />
-                  Ubicación: {survivor.nodo}
+                  Ubicación:{" "}
+                  {intersectionDisplayName(
+                    mapWorld?.nodos?.find((node) => node.id === survivor.nodo),
+                    mapWorld?.calles || [],
+                  )}
                   <br />
                   Estado: {survivor.activo ? "en camino" : "eliminado"}
                   <br />
-                  Destino: {survivor.refugioId}
+                  Destino:{" "}
+                  {displayEntityName(
+                    displayNames,
+                    "shelters",
+                    survivor.refugioId,
+                    "Refugio",
+                  )}
                 </Popup>
               </Marker>
             );
@@ -536,13 +683,31 @@ export default function MantaMap({
                 icon={entityIcon("shelter", "Refugio seguro")}
                 key={shelter.id}
               >
-                <Tooltip>Refugio: {shelter.id}</Tooltip>
+                <Tooltip>
+                  {displayEntityName(
+                    displayNames,
+                    "shelters",
+                    shelter.id,
+                    "Refugio",
+                  )}
+                </Tooltip>
                 <Popup>
-                  <b>{shelter.id}</b>
+                  <b>
+                    {displayEntityName(
+                      displayNames,
+                      "shelters",
+                      shelter.id,
+                      "Refugio",
+                    )}
+                  </b>
                   <br />
                   Tipo: refugio seguro
                   <br />
-                  Ubicación: {shelterNode}
+                  Ubicación:{" "}
+                  {intersectionDisplayName(
+                    mapWorld?.nodos?.find((node) => node.id === shelterNode),
+                    mapWorld?.calles || [],
+                  )}
                   <br />
                   Estado: disponible
                   {(shelter.capacidad ?? shelter.capacity) != null ? (
@@ -612,4 +777,6 @@ export default function MantaMap({
       </div>
     </section>
   );
-}
+});
+
+export default MantaMap;

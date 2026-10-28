@@ -5,7 +5,10 @@ modela un mapa como grafo, mueve zombies por turnos, registra eventos de ciudad,
 detecta mordidas y expone el estado del mundo para un simulador o un panel web.
 
 > **Estado actual:** MVP local con simulador y motor de rutas integrados. El
-> mapa de 25 nodos sigue siendo solo un fixture de desarrollo.
+> frontend incluye una red vial de OpenStreetMap para Manta; el grafo de 25
+> nodos se conserva como fixture de pruebas del motor.
+> La región de AWS está pendiente de confirmación; `us-east-1` es una opción
+> inicial por validar, no una configuración desplegada.
 
 ## Arquitectura actual
 
@@ -468,10 +471,11 @@ La suite cubre:
 
 ## Mapa y datos
 
-La primera versión usa una cuadrícula demo de 25 nodos. No representa todavía
-las calles reales de Manta. El formato para sustituirla por una exportación
-validada de OpenStreetMap está documentado en
-[data/README.md](data/README.md).
+El frontend incluye `frontend/src/data/mantaRoadNetwork.json`, una red vial
+local derivada de OpenStreetMap con 709 nodos y 2.232 calles con geometría.
+El grafo pequeño de 25 nodos se mantiene como fixture de desarrollo y pruebas;
+no es la red que dibuja el mapa actual. Consulte `frontend/README.md` y
+`data/README.md` para los detalles del conjunto de datos.
 
 Los IDs `N-0001` y `N-0002` son identificadores técnicos. El estado y el mapa
 también exponen nombres legibles de intersecciones y calles, por ejemplo
@@ -529,10 +533,16 @@ tests/
 
 ## Limitaciones actuales
 
-- El mapa todavía es un fixture de 25 nodos.
+- El motor conserva fixtures de 25 nodos para pruebas; el frontend usa la red
+  vial local de Manta. La API debe entregar nodos y calles compatibles para
+  reutilizar geometría real en modo API.
 - El estado todavía no está persistido en DynamoDB o Redis.
 - El backend todavía no está desplegado en AWS.
-- No hay frontend Leaflet publicado.
+- No hay frontend Leaflet publicado en AWS.
+- El código local de escenarios debe contrastarse con los números exactos de
+  la prueba: `src/scenarios.py` crea actualmente 8 caminantes en Ronda 1, una
+  cantidad menor a los 20 caminantes indicados por el Track A. El frontend no
+  compensa esa diferencia con entidades inventadas.
 - La API key es una variable de entorno local.
 - La capacidad de refugios y la flota de rescate son funcionalidades PRO
   pendientes.

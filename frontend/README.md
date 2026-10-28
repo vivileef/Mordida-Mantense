@@ -24,6 +24,12 @@ npm run build
 npm run preview
 ```
 
+Pruebas automatizadas del frontend:
+
+```powershell
+npm test
+```
+
 El build queda en `frontend\dist`.
 
 ## 2. Probar DEMO
@@ -54,8 +60,23 @@ El backend de este repositorio se inicia desde la raíz con:
 
 ```powershell
 $env:MANTA_API_KEY = "clave-local"
+$env:MANTA_GRAPH_PATH = "tools/grafo-manta/manta.json"
 python -m src.server
 ```
+
+Para usar la API protegida durante el desarrollo, configura `MANTA_API_KEY`
+solo en el entorno del proceso de Vite; nunca la pongas en una variable
+`VITE_*` ni en el bundle del navegador:
+
+```powershell
+$env:MANTA_API_KEY = "clave-local"
+npm run dev
+```
+
+En modo API, el selector de ronda envía `POST /escenario` para solicitar la
+ronda 1, 2 o 3. **Avanzar un paso** solicita y confirma el movimiento solo
+para el sobreviviente seleccionado. Un estado sin rutas o bloqueos se muestra
+como está recibido; el frontend no crea datos de demostración para API.
 
 ## 4. Estructura principal
 
@@ -79,7 +100,17 @@ Después de validar localmente, sube el contenido de `dist` a un bucket S3 confi
 - El mapa base depende de los tiles públicos de OpenStreetMap y necesita internet.
 - El backend actual no expone WebSocket; por eso API REAL usa polling configurable.
 - El servidor local puede exigir `x-api-key`; no se configura esa clave en el frontend porque cualquier variable `VITE_*` queda expuesta en el bundle. En un despliegue real se recomienda colocar autenticación y CORS en la capa de API/gateway o mediante un proxy seguro.
+- En desarrollo, el proxy local `/api` puede adjuntar `MANTA_API_KEY` desde el
+  entorno del proceso de Vite. No publiques esa variable ni uses `VITE_API_KEY`.
+  El alojamiento estático de producción no incluye un proxy seguro: la
+  autenticación debe resolverse en una capa de servidor o gateway.
+- API actualiza `/estado` mediante polling; no hay un canal push/WebSocket en
+  el backend local. `POST /paso` devuelve el siguiente nodo y la confirmación
+  de movimiento es explícita. La interfaz de rondas no demuestra por sí sola
+  que los volúmenes y eventos del Track A estén validados.
 - El mapa base utiliza los tiles públicos de OpenStreetMap y el DEMO carga `src/data/mantaRoadNetwork.json`, derivado de `tools/grafo-manta/manta.osm` para el bbox `-80.715,-0.975,-80.700,-0.960`. La red contiene 709 nodos y 2.232 aristas con geometrías LineString.
+- En el snapshot actual, 1.302 de las 2.232 calles tienen nombre de OSM; las
+  otras 930 se presentan honestamente como `Calle sin nombre`.
 - Los datos OSM se distribuyen bajo la licencia ODbL; conserva la atribución de OpenStreetMap. Las geometrías GeoJSON usan `[longitud, latitud]` y Leaflet recibe `[latitud, longitud]`.
 
 ### Información requerida del backend

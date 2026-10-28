@@ -1,3 +1,5 @@
+import { memo } from 'react';
+
 const statDefinitions = [
   ['Sobrevivientes activos', 'survivors', 'SUP', 'safe'],
   ['Mordidos / eliminados', 'lost', 'BAJ', 'alert'],
@@ -29,11 +31,13 @@ export function getStats(world) {
   };
 }
 
-export default function StatsPanel({ world }) {
+const StatsPanel = memo(function StatsPanel({ world }) {
   const stats = getStats(world);
   return <section className="stats-grid" aria-label="Estadísticas de la simulación">
     {statDefinitions.map(([label, key, icon, tone]) => <article className={`stat-card stat-card--${tone}`} key={key}>
       <span className="stat-card__icon">{icon}</span><div><span>{label}</span><strong>{stats[key]}</strong></div>
     </article>)}
   </section>;
-}
+});
+
+export default StatsPanel;

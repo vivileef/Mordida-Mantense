@@ -215,16 +215,34 @@ export function geometryToPositions(geometry) {
   if (!geometry) return [];
   if (geometry.type === "Feature") return geometryToPositions(geometry.geometry);
   if (geometry.type === "LineString") {
-    return (geometry.coordinates ?? [])
-      .filter((point) => Array.isArray(point) && Number.isFinite(Number(point[0])) && Number.isFinite(Number(point[1])))
-      .map(([lng, lat]) => [Number(lat), Number(lng)]);
+    const coordinates = geometry.coordinates ?? [];
+    if (!Array.isArray(coordinates) || coordinates.length < 2) return [];
+    const valid = coordinates.every((point) =>
+      Array.isArray(point) && point.length >= 2 &&
+      Number.isFinite(Number(point[0])) && Number.isFinite(Number(point[1])) &&
+      Math.abs(Number(point[0])) <= 180 && Math.abs(Number(point[1])) <= 90,
+    );
+    return valid ? coordinates.map(([lng, lat]) => [Number(lat), Number(lng)]) : [];
   }
   if (geometry.type === "MultiLineString") {
-    return (geometry.coordinates ?? []).flatMap((line) => geometryToPositions({ type: "LineString", coordinates: line }));
+    const lines = geometry.coordinates ?? [];
+    if (!Array.isArray(lines) || lines.length === 0) return [];
+    const paths = lines.map((line) => geometryToPositions({ type: "LineString", coordinates: line }));
+    if (paths.some((path) => path.length < 2)) return [];
+    const merged = [...paths[0]];
+    for (const path of paths.slice(1)) {
+      const end = merged[merged.length - 1];
+      const startsAtEnd = end[0] === path[0][0] && end[1] === path[0][1];
+      const endsAtEnd = end[0] === path.at(-1)[0] && end[1] === path.at(-1)[1];
+      if (!startsAtEnd && !endsAtEnd) return [];
+      const ordered = startsAtEnd ? path : [...path].reverse();
+      merged.push(...ordered.slice(1));
+    }
+    return merged;
   }
   const points = geometry.coordinates ?? geometry;
   if (!Array.isArray(points)) return [];
-  return points.map((point) => {
+  const positions = points.map((point) => {
     if (Array.isArray(point) && point.length >= 2 && Number.isFinite(Number(point[0])) && Number.isFinite(Number(point[1]))) {
       return [Number(point[0]), Number(point[1])];
     }
@@ -232,10 +250,11 @@ export function geometryToPositions(geometry) {
       return [Number(point.lat), Number(point.lng)];
     }
     return null;
-  }).filter(Boolean);
+  });
+  return positions.length > 1 && positions.every(Boolean) ? positions : [];
 }
 
-export function streetGeometry(street, nodeMap, { allowEndpointFallback = true } = {}) {
+export function streetGeometry(street, nodeMap, { allowEndpointFallback = false } = {}) {
   const explicit = geometryToPositions(street.geometry ?? street.geometria ?? street.coordinates ?? street.coordenadas);
   if (explicit.length > 1) return explicit;
   if (!allowEndpointFallback) return [];
@@ -265,9 +284,12 @@ export function routeGeometry(route, nodeMap, streetMap) {
   if (Array.isArray(routeNodes) && routeNodes.length > 1) {
     const positions = [];
     for (let index = 0; index < routeNodes.length - 1; index += 1) {
+      const origin = String(routeNodes[index]);
+      const destination = String(routeNodes[index + 1]);
+      if (!nodeMap.has(origin) || !nodeMap.has(destination)) return [];
       const segment = mappedStreetGeometry(
-        String(routeNodes[index]),
-        String(routeNodes[index + 1]),
+        origin,
+        destination,
         streetMap,
       );
       if (segment.length < 2) return [];
@@ -282,6 +304,9 @@ export function routeGeometry(route, nodeMap, streetMap) {
     for (let index = 0; index < routeStreets.length; index += 1) {
       const street = normalizeStreet(routeStreets[index]);
       if (!street) return [];
+      if (!nodeMap.has(street.origen) || !nodeMap.has(street.destino)) return [];
+      if (!streetMap.has(`${street.origen}|${street.destino}`) &&
+          !streetMap.has(`${street.destino}|${street.origen}`)) return [];
       const mappedSegment = mappedStreetGeometry(
         street.origen,
         street.destino,
