@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import heapq
 import threading
 import unittest
 from http.server import ThreadingHTTPServer
@@ -13,7 +14,7 @@ from src.model import Edge, Refuge, Survivor, WorldState, Zombie, ZombieType
 from src.routing import alternative_safe_paths, safe_step, shortest_safe_path
 from src.server import ApiHandler
 from src.service import RouteService
-from src.route_engine.paths import select_refuge_routes
+from src.route_engine.paths import _admissible_heuristic_scale, select_refuge_routes
 
 
 def graph_fixture() -> CityGraph:
@@ -26,6 +27,24 @@ def graph_fixture() -> CityGraph:
     return CityGraph(nodes, edges)
 
 
+def dijkstra_reference_cost(graph, start: str, goal: str) -> float | None:
+    """Referencia independiente para contrastar el costo que devuelve A*."""
+    queue = [(0.0, start)]
+    costs = {start: 0.0}
+    while queue:
+        cost, node = heapq.heappop(queue)
+        if cost != costs.get(node):
+            continue
+        if node == goal:
+            return cost
+        for edge in graph.neighbors(node):
+            candidate = cost + edge.distance_m
+            if candidate < costs.get(edge.target, float("inf")):
+                costs[edge.target] = candidate
+                heapq.heappush(queue, (candidate, edge.target))
+    return None
+
+
 class RoutingBehaviorTests(unittest.TestCase):
     def setUp(self):
         self.graph = graph_fixture()
@@ -36,6 +55,115 @@ class RoutingBehaviorTests(unittest.TestCase):
         self.assertEqual(shortest_safe_path(self.graph, self.world, "A", "D"), ["A", "B", "D"])
         self.world.blocked_edges.add(("A", "B"))
         self.assertEqual(shortest_safe_path(self.graph, self.world, "A", "D"), ["A", "C", "D"])
+
+    def test_astar_matches_dijkstra_reference_with_calibrated_heuristic(self):
+        nodes = {
+            "S": (0.0, 0.0),
+            "A": (0.0, 1.0),
+            "B": (1.0, 0.0),
+            "G": (0.0, 2.0),
+        }
+        edges = {node: [] for node in nodes}
+        for source, target, distance in (
+            ("S", "A", 1), ("A", "G", 1),
+            ("S", "B", 1), ("B", "G", 5),
+        ):
+            edges[source].append(Edge(target, distance, "calle"))
+            edges[target].append(Edge(source, distance, "calle"))
+        graph = CityGraph(nodes, edges)
+
+        with patch.object(graph, "heuristic", wraps=graph.heuristic) as heuristic:
+            path = shortest_safe_path(graph, WorldState(), "S", "G")
+
+        self.assertEqual(path, ["S", "A", "G"])
+        self.assertEqual(
+            sum(min(edge.distance_m for edge in graph.neighbors(a) if edge.target == b)
+                for a, b in zip(path, path[1:])),
+            dijkstra_reference_cost(graph, "S", "G"),
+        )
+        scale = _admissible_heuristic_scale(graph)
+        for node in graph.nodes:
+            self.assertLessEqual(
+                scale * graph.heuristic(node, "G"),
+                dijkstra_reference_cost(graph, node, "G"),
+            )
+        self.assertGreater(heuristic.call_count, 0)
+
+    def test_astar_uses_cheapest_parallel_edge(self):
+        nodes = {node: (0.0, float(index)) for index, node in enumerate(("S", "A", "B", "G"))}
+        edges = {node: [] for node in nodes}
+        for source, target, distance in (
+            ("S", "A", 10), ("S", "A", 1), ("A", "G", 1),
+            ("S", "B", 3), ("B", "G", 1),
+        ):
+            edges[source].append(Edge(target, distance, "calle"))
+            edges[target].append(Edge(source, distance, "calle"))
+        graph = CityGraph(nodes, edges)
+
+        path = shortest_safe_path(graph, WorldState(), "S", "G")
+
+        self.assertEqual(path, ["S", "A", "G"])
+        self.assertEqual(dijkstra_reference_cost(graph, "S", "G"), 2)
+
+    def test_astar_falls_back_to_zero_heuristic_without_graph_heuristic(self):
+        class GraphWithoutHeuristic:
+            def __init__(self, graph):
+                self.nodes = graph.nodes
+                self._edges = graph.edges
+
+            def neighbors(self, node):
+                return self._edges.get(node, [])
+
+            def has_edge(self, source, target):
+                return any(edge.target == target for edge in self.neighbors(source))
+
+        graph = GraphWithoutHeuristic(self.graph)
+
+        self.assertEqual(_admissible_heuristic_scale(graph), 0)
+        self.assertEqual(
+            shortest_safe_path(graph, WorldState(), "A", "D"),
+            ["A", "B", "D"],
+        )
+
+    def test_astar_keeps_safety_and_forbidden_node_edge_filters(self):
+        path = shortest_safe_path(
+            self.graph, self.world, "A", "D", banned_edges={("A", "B")}
+        )
+        self.assertEqual(path, ["A", "C", "D"])
+
+        self.world.blocked_edges.add(("A", "C"))
+        self.assertIsNone(
+            shortest_safe_path(
+                self.graph, self.world, "A", "D",
+                banned_edges={("A", "B")},
+            )
+        )
+
+        self.world.blocked_edges.clear()
+        self.world.zombies = {"Z": Zombie("Z", ZombieType.WALKER, "B")}
+        self.assertEqual(
+            shortest_safe_path(self.graph, self.world, "A", "D"),
+            ["A", "C", "D"],
+        )
+        self.assertIsNone(
+            shortest_safe_path(self.graph, self.world, "A", "D", banned_nodes={"B", "C"})
+        )
+
+        self.world.zombies = {
+            "Z": Zombie("Z", ZombieType.RUNNER, "B", previous_node="A")
+        }
+        self.assertEqual(
+            shortest_safe_path(self.graph, self.world, "A", "D"),
+            ["A", "C", "D"],
+        )
+
+    def test_astar_returns_none_for_disconnected_goal(self):
+        graph = CityGraph(
+            {"S": (0.0, 0.0), "A": (0.0, 1.0), "G": (1.0, 1.0)},
+            {"S": [Edge("A", 1, "calle")], "A": [], "G": []},
+        )
+
+        self.assertIsNone(shortest_safe_path(graph, WorldState(), "S", "G"))
 
     def test_alternative_routes_are_returned(self):
         paths = alternative_safe_paths(self.graph, self.world, "A", "D", count_paths=2)
@@ -238,6 +366,15 @@ class RoutingBehaviorTests(unittest.TestCase):
                 self.assertFalse(self.world.is_blocked(source, target))
                 self.assertTrue(safe_step(graph, self.world, source, target))
 
+    def test_alternatives_avoid_frontal_zombie_crossing(self):
+        self.world.zombies = {
+            "Z": Zombie("Z", ZombieType.RUNNER, "B", previous_node="A")
+        }
+
+        paths = alternative_safe_paths(self.graph, self.world, "A", "D", count_paths=3)
+
+        self.assertEqual(paths, [["A", "C", "D"]])
+
     def test_refuge_fallback_when_assigned_refuge_is_dangerous(self):
         service = RouteService(self.graph)
         service.world.survivors = {"S": Survivor("S", "A", "R")}
@@ -319,6 +456,38 @@ class RoutingBehaviorTests(unittest.TestCase):
         service.world.blocked_edges.add(("A", "B"))
         blocked_route = service.routes_for("S")
         self.assertNotEqual(open_route, blocked_route)
+
+    def test_cache_key_tracks_available_refuges(self):
+        service = RouteService(self.graph)
+        service.world.survivors = {"S": Survivor("S", "A", "R")}
+        service.world.refuges = {
+            "R": Refuge("R", "D"),
+            "R2": Refuge("R2", "E"),
+        }
+        service.world.zombies = {}
+
+        first = service.routes_for("S", limit=1)
+        del service.world.refuges["R"]
+        second = service.routes_for("S", limit=1)
+
+        self.assertEqual(first[0][-1], "D")
+        self.assertEqual(second[0][-1], "E")
+
+    def test_cache_key_tracks_preferred_refuge(self):
+        service = RouteService(self.graph)
+        service.world.survivors = {"S": Survivor("S", "A", "R")}
+        service.world.refuges = {
+            "R": Refuge("R", "D"),
+            "R2": Refuge("R2", "E"),
+        }
+        service.world.zombies = {}
+
+        assigned_route = service.routes_for("S", limit=1)
+        service.world.survivors["S"].refuge_id = "R2"
+        preferred_route = service.routes_for("S", limit=1)
+
+        self.assertEqual(assigned_route[0][-1], "D")
+        self.assertEqual(preferred_route[0][-1], "E")
 
     def test_equivalent_route_query_reuses_cached_result(self):
         service = RouteService(self.graph)
