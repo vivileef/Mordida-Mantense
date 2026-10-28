@@ -70,10 +70,24 @@ $env:MANTA_OVERPASS_URL = "https://overpass.kumi.systems/api"
 python tools\grafo-manta\generar_grafo.py --bbox "-80.760,-0.990,-80.640,-0.900"
 ```
 
-Antes de usar un endpoint indicado por `--overpass-url` o
-`MANTA_OVERPASS_URL`, el script consulta su ruta `/status`. Si no responde
-correctamente, el endpoint alternativo se rechaza y no se inicia la descarga.
-El valor por defecto sigue siendo el endpoint configurado por OSMnx.
+Antes de descargar, el script comprueba tanto el endpoint predeterminado de
+OSMnx como uno indicado por `--overpass-url` o `MANTA_OVERPASS_URL`. Construye:
+
+```text
+<URL-base-sin-slash-final>/interpreter
+```
+
+Por ejemplo, `https://overpass.private.coffee/api/` se convierte en
+`https://overpass.private.coffee/api/interpreter`. La validación realiza una
+petición HTTP `POST` con la consulta mínima y acotada:
+
+```text
+[out:json][timeout:5];node(0,0,0.0001,0.0001);out count;
+```
+
+No descarga el grafo de Manta durante esta comprobación. El endpoint solo se
+acepta si responde con HTTP 2xx y JSON de Overpass con `elements`. El valor
+por defecto sigue siendo el endpoint configurado por OSMnx.
 
 Cuando Overpass devuelve saturación, HTTP 429/5xx o un timeout, se hacen como
 máximo tres reintentos con espera progresiva (5, 10 y 20 segundos). Se puede
@@ -120,9 +134,8 @@ Este esquema conserva el contrato actual del proyecto y añade `sentido` para do
   límites de uso y mantenimiento; un HTTP 502 no implica que los datos estén
   disponibles en otro endpoint.
 - El endpoint alternativo debe ser compatible con la API `/api/interpreter` que
-  usa OSMnx y responder a `/api/status`. La comprobación de estado solo prueba
-  disponibilidad básica, no garantiza que una consulta posterior no sea
-  rechazada por saturación.
+  usa OSMnx. La comprobación mínima confirma el intérprete, pero no garantiza
+  que una consulta posterior grande no sea rechazada por saturación.
 - Si la consulta falla, la descarga no debe tratarse como exitosa.
 - El trabajo real de rutas sobre calles requiere confirmar el formato final con el backend.
 - El grafo puede resultar grande si se descarga la ciudad completa; por eso se ofrece el límite por `--bbox`.
@@ -153,6 +166,7 @@ La validación que no requiere Internet es:
 
 ```powershell
 python tools\grafo-manta\generar_grafo.py --dry-run
+python -m unittest tools\grafo-manta\test_generar_grafo.py
 ```
 
 También se puede probar `validate_route_json` con un payload creado en una

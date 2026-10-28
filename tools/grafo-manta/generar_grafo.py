@@ -6,7 +6,7 @@ import os
 import sys
 import time
 from urllib.error import HTTPError, URLError
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urlencode, urljoin, urlparse
 from urllib.request import Request, urlopen
 from pathlib import Path
 from typing import Any
@@ -42,29 +42,38 @@ def make_node_id(index: int) -> str:
     return f"N-{index:04d}"
 
 
-def overpass_status_url(overpass_url: str) -> str:
-    return urljoin(overpass_url.rstrip("/") + "/", "status")
-
-
 def check_overpass_endpoint(overpass_url: str, timeout: float = 15.0) -> tuple[bool, str]:
-    """Comprueba que el endpoint base de OSMnx responde antes de usarlo."""
+    """Comprueba el intérprete Overpass con una consulta mínima y acotada."""
     parsed = urlparse(overpass_url)
     if parsed.scheme not in {"http", "https"} or not parsed.netloc:
         return False, "La URL de Overpass debe usar http(s) y contener un host válido."
 
+    interpreter_url = urljoin(overpass_url.rstrip("/") + "/", "interpreter")
+    query = "[out:json][timeout:5];node(0,0,0.0001,0.0001);out count;"
     request = Request(
-        overpass_status_url(overpass_url),
-        headers={"User-Agent": "Mordida-Mantense-grafo/1.0"},
+        interpreter_url,
+        data=urlencode({"data": query}).encode("utf-8"),
+        method="POST",
+        headers={
+            "Content-Type": "application/x-www-form-urlencoded",
+            "User-Agent": "Mordida-Mantense-grafo/1.0",
+        },
     )
     try:
         with urlopen(request, timeout=timeout) as response:
-            if 200 <= response.status < 300:
-                return True, f"endpoint disponible (HTTP {response.status})"
-            return False, f"endpoint respondió HTTP {response.status}"
+            if not 200 <= response.status < 300:
+                return False, f"intérprete respondió HTTP {response.status}"
+            try:
+                result = json.loads(response.read().decode("utf-8"))
+            except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+                return False, f"intérprete devolvió una respuesta no JSON ({exc})"
+            if not isinstance(result, dict) or not isinstance(result.get("elements"), list):
+                return False, "intérprete devolvió un JSON sin la estructura esperada."
+            return True, f"intérprete disponible (HTTP {response.status})"
     except HTTPError as exc:
-        return False, f"endpoint respondió HTTP {exc.code}"
+        return False, f"intérprete respondió HTTP {exc.code}"
     except (TimeoutError, URLError, OSError) as exc:
-        return False, f"no responde ({exc})"
+        return False, f"intérprete no responde dentro del timeout ({exc})"
 
 
 def is_transient_overpass_error(error: Exception) -> bool:
@@ -271,16 +280,15 @@ def main() -> int:
         print(f"Endpoint Overpass: {args.overpass_url or 'configuración por defecto de OSMnx'}")
         return 0
 
-    selected_overpass_url = args.overpass_url
-    if selected_overpass_url:
-        available, status = check_overpass_endpoint(selected_overpass_url)
-        if not available:
-            print(
-                f"El endpoint alternativo no se usará porque no superó la comprobación: {status}",
-                file=sys.stderr,
-            )
-            return 1
-        print(f"Endpoint Overpass alternativo comprobado: {selected_overpass_url} ({status})")
+    selected_overpass_url = args.overpass_url or ox.settings.overpass_url
+    available, status = check_overpass_endpoint(selected_overpass_url)
+    if not available:
+        print(
+            f"El endpoint Overpass no se usará porque no superó la comprobación: {status}",
+            file=sys.stderr,
+        )
+        return 1
+    print(f"Endpoint Overpass comprobado: {selected_overpass_url} ({status})")
 
     try:
         _, _, payload = download_manta_graph(
