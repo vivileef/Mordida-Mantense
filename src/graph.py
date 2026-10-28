@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from math import hypot
+from math import hypot, isfinite
 from typing import Any
 
 from .model import Edge
@@ -14,6 +14,16 @@ class CityGraph:
     nodes: dict[str, tuple[float, float]]
     edges: dict[str, list[Edge]]
     node_names: dict[str, str] | None = None
+
+    def __post_init__(self) -> None:
+        """Rechaza pesos inválidos al crear el grafo, sin cambiar su estructura."""
+        for source, edges in self.edges.items():
+            for edge in edges:
+                if not isfinite(edge.distance_m) or edge.distance_m < 0:
+                    raise ValueError(
+                        f"distancia_m inválida en {source}->{edge.target}: "
+                        "debe ser finita y no negativa"
+                    )
 
     def neighbors(self, node: str) -> list[Edge]:
         # Un nodo desconocido no debe romper una petición de ruta.
