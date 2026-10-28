@@ -4,6 +4,7 @@ import {
   displayEntityName,
   intersectionDisplayName,
 } from "../utils/presentation";
+import { forecastRunnerMovements } from "../services/runnerForecast";
 
 function firstArray(object, ...keys) {
   for (const key of keys) {
@@ -96,12 +97,13 @@ function readableStatus(value) {
   return knownStatuses[status.toLowerCase()] ?? "Estado informado";
 }
 
-export default function ProFeaturesPanel({ world, mode = "demo" }) {
-  const predictions = firstArray(
+export default function ProFeaturesPanel({ world, mode = "demo", onDispatch, dispatchLoading = false, dispatchFeedback = "" }) {
+  const receivedPredictions = firstArray(
     world,
     "prediccionesCorredores",
     "predictions",
   );
+  const predictions = receivedPredictions ?? (world ? forecastRunnerMovements(world) : null);
   const rescue = world?.rescate ?? world?.rescue;
   const vehicles = firstArray(rescue, "vehiculos", "vehicles");
   const assignments = firstArray(rescue, "asignaciones", "assignments");
@@ -139,8 +141,9 @@ export default function ProFeaturesPanel({ world, mode = "demo" }) {
           <span className="pro-panel__eyebrow">INDICADORES OPERATIVOS</span>
           <h2>Predicción y rescate</h2>
           <p className="pro-panel__description">
-            Resume la información recibida. No calcula predicciones ni envía
-            vehículos a rescatar.
+            {receivedPredictions === null
+              ? "Estimación local de trayectorias según las calles disponibles."
+              : "Resume la información recibida del sistema."}{mode === "demo" ? " El rescate también se simula por turnos." : " Despacho de vehiculos."}
           </p>
         </div>
         <span
@@ -156,7 +159,7 @@ export default function ProFeaturesPanel({ world, mode = "demo" }) {
             <span className="pro-card__symbol pro-card__symbol--prediction">
               PRONÓSTICO
             </span>
-            <span className="pro-card__label">Posibles movimientos de corredores</span>
+            <span className="pro-card__label">Posibles movimientos de amenazas</span>
           </div>
           {!predictionsAvailable ? (
             <p className="pro-card__empty">
@@ -167,8 +170,10 @@ export default function ProFeaturesPanel({ world, mode = "demo" }) {
               <strong className="pro-card__metric">{predictions.length}</strong>
               <p className="pro-card__summary">
                 {predictions.length === 0
-                  ? "Sin predicciones registradas."
-                  : "Corredores proyectados en el estado actual."}
+                  ? "No hay amenazas con movimientos proyectados."
+                  : receivedPredictions === null
+                    ? "Trayectorias estimadas para los próximos tramos."
+                    : "Corredores proyectados en el estado actual."}
               </p>
               {predictions.length > 0 && (
                 <ul className="pro-card__list">
@@ -189,7 +194,7 @@ export default function ProFeaturesPanel({ world, mode = "demo" }) {
                                 id,
                                 `Corredor ${index + 1}`,
                               )
-                            : `Corredor ${index + 1}`}
+                            : `${prediction.tipo ?? "Amenaza"} ${index + 1}`}
                         </span>
                         <small>
                           {Array.isArray(nodes) && nodes.length
@@ -269,7 +274,9 @@ export default function ProFeaturesPanel({ world, mode = "demo" }) {
               <p className="pro-card__summary">
                 {vehicles.length === 0
                   ? "No hay vehículos informados."
-                  : "Vehículos informados por el sistema; esto no confirma que haya un rescate en curso."}
+                  : mode === "demo"
+                    ? "La ambulancia puede recoger sobrevivientes y llevarlos a su refugio por turnos."
+                    : "Vehículos informados por el sistema; el panel no confirma un rescate en curso."}
               </p>
               {vehicles.length > 0 && (
                 <ul className="pro-card__list">
@@ -300,6 +307,14 @@ export default function ProFeaturesPanel({ world, mode = "demo" }) {
                   Personas o tareas asignadas:{" "}
                   <strong>{assignments.length}</strong>
                 </p>
+              )}
+              {mode === "api" && vehicles.some((vehicle) => ["disponible", "available", "ready"].includes(String(valueOf(vehicle, "fase", "estado", "status")).toLowerCase())) && (world?.sobrevivientes ?? []).some((survivor) => survivor.activo && !survivor.abordo) && (
+                <form className="pro-dispatch" onSubmit={(event) => { event.preventDefault(); const data = new FormData(event.currentTarget); onDispatch?.(String(data.get("vehicle")), String(data.get("survivor"))); }}>
+                  <label>Vehículo<select name="vehicle">{vehicles.filter((vehicle) => ["disponible", "available", "ready"].includes(String(valueOf(vehicle, "fase", "estado", "status")).toLowerCase())).map((vehicle, index) => <option key={String(vehicle.id ?? vehicle.vehiculoId ?? index)} value={String(vehicle.id ?? vehicle.vehiculoId)}>{readableName(valueOf(vehicle, "nombre", "name"), `Vehículo ${index + 1}`)}</option>)}</select></label>
+                  <label>Persona<select name="survivor">{(world?.sobrevivientes ?? []).filter((survivor) => survivor.activo && !survivor.abordo).map((survivor, index) => <option key={String(survivor.id)} value={String(survivor.id)}>{displayEntityName(displayNames, "survivors", survivor.id, `Persona ${index + 1}`)}</option>)}</select></label>
+                  <button type="submit" disabled={dispatchLoading || !onDispatch}>{dispatchLoading ? "Despachando…" : "Despachar"}</button>
+                  {dispatchFeedback && <span role="status">{dispatchFeedback}</span>}
+                </form>
               )}
             </>
           )}

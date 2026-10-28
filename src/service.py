@@ -4,6 +4,7 @@ from dataclasses import asdict
 import logging
 import os
 import random
+import heapq
 from pathlib import Path
 from threading import RLock
 
@@ -40,6 +41,94 @@ class RouteService:
         self._lock = RLock()
         self._route_cache = RouteCache()
         self.horde_radius = max(0, int(os.environ.get("MANTA_HORDE_RADIUS", "1")))
+        self._init_rescue_fleet()
+
+    def _init_rescue_fleet(self) -> None:
+        start = next(iter(self.world.refuges.values()), None)
+        node = start.node if start else next(iter(self.graph.nodes), "")
+        self.vehicles = {"V-001": {"id": "V-001", "nombre": "Ambulancia 1", "nodo": node,
+            "estado": "disponible", "fase": "disponible", "ruta": [], "sobrevivienteId": None,
+            "refugioId": None}}
+
+    def _shortest_path(self, start: str, goal: str) -> list[str]:
+        pending = [(0.0, start, [])]
+        distances = {start: 0.0}
+        while pending:
+            distance, node, path = heapq.heappop(pending)
+            if node == goal:
+                return [*path, node]
+            if distance != distances.get(node):
+                continue
+            for edge in self.graph.neighbors(node):
+                if self.world.is_blocked(node, edge.target):
+                    continue
+                candidate = distance + edge.distance_m
+                if candidate < distances.get(edge.target, float("inf")):
+                    distances[edge.target] = candidate
+                    heapq.heappush(pending, (candidate, edge.target, [*path, node]))
+        return []
+
+    def dispatch_vehicle(self, vehicle_id: str, survivor_id: str) -> bool:
+        with self._lock:
+            vehicle = self.vehicles.get(vehicle_id)
+            survivor = self.world.survivors.get(survivor_id)
+            if not vehicle or vehicle["fase"] != "disponible" or not survivor or not survivor.active or survivor.aboard:
+                return False
+            if survivor.refuge_id not in self.world.refuges:
+                return False
+            path = self._shortest_path(vehicle["nodo"], survivor.node)
+            if not path:
+                return False
+            vehicle.update(estado="en camino", fase="recogida", ruta=path[1:], sobrevivienteId=survivor_id,
+                refugioId=survivor.refuge_id)
+            if not vehicle["ruta"]:
+                self._load_vehicle(vehicle)
+            return True
+
+    def _load_vehicle(self, vehicle: dict) -> None:
+        survivor = self.world.survivors.get(vehicle["sobrevivienteId"])
+        if not survivor:
+            return
+        survivor.aboard = True
+        vehicle["fase"] = "traslado"
+        vehicle["estado"] = "trasladando sobreviviente"
+        refuge = self.world.refuges[vehicle["refugioId"]]
+        path = self._shortest_path(vehicle["nodo"], refuge.node)
+        vehicle["ruta"] = path[1:] if path else []
+        if not vehicle["ruta"]:
+            self._finish_vehicle(vehicle)
+
+    def _finish_vehicle(self, vehicle: dict) -> None:
+        survivor = self.world.survivors.get(vehicle["sobrevivienteId"])
+        if survivor:
+            survivor.node = vehicle["nodo"]
+            survivor.aboard = False
+            survivor.active = False
+            survivor.rescued = True
+        vehicle.update(estado="disponible", fase="disponible", ruta=[], sobrevivienteId=None, refugioId=None)
+
+    def _advance_rescue_fleet(self) -> None:
+        for vehicle in self.vehicles.values():
+            if vehicle["fase"] == "disponible":
+                continue
+            survivor = self.world.survivors.get(vehicle["sobrevivienteId"])
+            if vehicle["fase"] == "recogida" and survivor:
+                destination = vehicle["ruta"][-1] if vehicle["ruta"] else vehicle["nodo"]
+                if destination != survivor.node:
+                    path = self._shortest_path(vehicle["nodo"], survivor.node)
+                    if not path:
+                        vehicle.update(estado="disponible", fase="disponible", ruta=[], sobrevivienteId=None, refugioId=None)
+                        continue
+                    vehicle["ruta"] = path[1:]
+            if vehicle["ruta"]:
+                vehicle["nodo"] = vehicle["ruta"].pop(0)
+            if vehicle["fase"] == "recogida" and survivor:
+                if vehicle["nodo"] == survivor.node:
+                    self._load_vehicle(vehicle)
+            elif vehicle["fase"] == "traslado" and survivor:
+                survivor.node = vehicle["nodo"]
+                if not vehicle["ruta"]:
+                    self._finish_vehicle(vehicle)
 
     @staticmethod
     def _load_default_graph() -> CityGraph:
@@ -163,6 +252,8 @@ class RouteService:
                         "nodoAnterior": survivor.previous_node,
                         "refugioId": survivor.refuge_id,
                         "activo": survivor.active,
+                        "abordo": survivor.aboard,
+                        "rescatado": survivor.rescued,
                     }
                     for survivor in self.world.survivors.values()
                 ],
@@ -195,6 +286,9 @@ class RouteService:
                 ],
                 "nodos": self.graph.as_dict()["nodos"],
                 "rutas": self.planned_routes(),
+                "rescate": {"vehiculos": [dict(vehicle) for vehicle in self.vehicles.values()],
+                    "asignaciones": [{"vehiculoId": vehicle["id"], "sobrevivienteId": vehicle["sobrevivienteId"]}
+                        for vehicle in self.vehicles.values() if vehicle["sobrevivienteId"]]},
             }
 
     def planned_routes(self) -> list[dict]:
@@ -270,7 +364,9 @@ class RouteService:
         with self._lock:
             if blocked_edge:
                 self.simulator.block_edge(*blocked_edge)
-            return self.simulator.advance_turn()
+            turn = self.simulator.advance_turn()
+            self._advance_rescue_fleet()
+            return turn
 
     def move_survivor(self, survivor_id: str, target: str) -> bool:
         """Registra el movimiento ejecutado por el simulador de sobrevivientes."""
@@ -285,6 +381,7 @@ class RouteService:
             self.world = world
             self.simulator = self._new_simulator()
             self._route_cache.clear()
+            self._init_rescue_fleet()
 
     def start_turn_loop(self) -> None:
         """Activa el reloj de dos segundos usado por el servidor."""

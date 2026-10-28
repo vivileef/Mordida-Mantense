@@ -1129,7 +1129,7 @@ const MantaMap = memo(function MantaMap({
                     )}
                   </b>
                   <br />
-                  Tipo: sobreviviente
+                  Tipo: {survivor.mordido === true || survivor.mordida === true || survivor.bitten === true || /mordid[oa]s? por (?:un )?zomb(?:i|ie)/i.test(String(survivor.estado ?? survivor.status ?? survivor.state ?? "")) ? "No sobreviviente" : "sobreviviente"}
                   <br />
                   Ubicación:{" "}
                   {intersectionDisplayName(
@@ -1137,7 +1137,7 @@ const MantaMap = memo(function MantaMap({
                     mapWorld?.calles || [],
                   )}
                   <br />
-                    Estado: {survivor.activo ? "Activo" : "No activo"}
+                    Estado: {survivor.abordo ? "En vehículo de rescate" : survivor.rescatado ? "A salvo en refugio" : survivor.mordido === true || survivor.mordida === true || survivor.bitten === true || /mordid[oa]s? por (?:un )?zomb(?:i|ie)/i.test(String(survivor.estado ?? survivor.status ?? survivor.state ?? "")) ? "Mordido por zombie" : survivor.activo ? "Activo" : "No sobreviviente"}
                   <br />
                   Destino:{" "}
                   {displayEntityName(

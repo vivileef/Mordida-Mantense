@@ -74,5 +74,13 @@ export function createSimulatorApi(request) {
         body: JSON.stringify({}),
       });
     },
+
+    dispatchVehicle({ vehiculoId, sobrevivienteId }) {
+      return request("/despachar-vehiculo", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ vehiculoId, sobrevivienteId }),
+      });
+    },
   };
 }

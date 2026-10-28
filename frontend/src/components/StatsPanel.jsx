@@ -123,7 +123,7 @@ const StatsPanel = memo(function StatsPanel({ world }) {
             {key === "people" && !unavailable.people && (
               <div className="stat-card__details">
                 <span><b>{stats.arrivedSurvivors}</b> llegaron a refugio</span>
-                <span><b>{stats.inactiveSurvivors}</b> fuera de actividad</span>
+                <span><b>{stats.inactiveSurvivors}</b> no sobrevivientes</span>
               </div>
             )}
             {key === "zombies" && !unavailable.zombies && (

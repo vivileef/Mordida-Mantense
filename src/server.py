@@ -60,6 +60,7 @@ class ApiHandler(BaseHTTPRequestHandler):
                         "simularTurno": "POST /simular-turno (requiere x-api-key)",
                         "escenario": "POST /escenario (ronda1, ronda2 o ronda3)",
                         "moverSobreviviente": "POST /mover-sobreviviente (requiere x-api-key)",
+                        "despacharVehiculo": "POST /despachar-vehiculo (requiere x-api-key)",
                         "mapa": "GET /mapa",
                         "ruta": "GET /ruta/{sobrevivienteId} (requiere x-api-key)",
                         "salud": "GET /salud",
@@ -84,6 +85,22 @@ class ApiHandler(BaseHTTPRequestHandler):
             self._send(200, self.service.state())
 
     def do_POST(self) -> None:
+        if self.path == "/despachar-vehiculo":
+            if not self._authorized():
+                return
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                data = json.loads(self.rfile.read(length) or b"{}")
+                vehicle_id = data["vehiculoId"]
+                survivor_id = data["sobrevivienteId"]
+                if not isinstance(vehicle_id, str) or not isinstance(survivor_id, str):
+                    raise ValueError("Identificadores invÃ¡lidos")
+            except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+                self._send(400, {"error": "Despacho invÃ¡lido"})
+                return
+            dispatched = self.service.dispatch_vehicle(vehicle_id, survivor_id)
+            self._send(200 if dispatched else 409, {"despachado": dispatched})
+            return
         if self.path == "/mover-sobreviviente":
             if not self._authorized():
                 return

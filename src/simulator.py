@@ -151,7 +151,7 @@ class ApocalypseSimulator:
 
     def _mark_bites(self) -> None:
         for survivor in self.world.survivors.values():
-            if not survivor.active:
+            if not survivor.active or survivor.aboard:
                 continue
             shares_node = any(
                 zombie.visible and zombie.node == survivor.node

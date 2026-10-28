@@ -20,6 +20,7 @@ import {
   fetchSurvivorRoute,
   moveSurvivor,
   requestNextStep,
+  dispatchVehicle,
 } from "./services/simulatorApi";
 import {
   createDisplayNames,
@@ -54,10 +55,12 @@ function survivorReachedDestination(survivor, refuges = []) {
 
 function readableSurvivorStatus(survivor, refuges) {
   if (!survivor) return "";
-  if (survivorReachedDestination(survivor, refuges)) return "Llegó al refugio";
   const value = survivor.estado ?? survivor.status ?? survivor.state;
+  const normalizedValue = String(value ?? "").trim().toLowerCase().replaceAll("_", " ").replaceAll("-", " ");
+  if (/mordid[oa]s? por (?:un )?zomb(?:i|ie)/.test(normalizedValue) || survivor.mordido === true || survivor.mordida === true || survivor.bitten === true) return "Mordido por zombie";
+  if (survivorReachedDestination(survivor, refuges)) return "Llegó al refugio";
   if (typeof value === "string" && value.trim()) {
-    const status = value.trim().toLowerCase().replaceAll("_", " ").replaceAll("-", " ");
+    const status = normalizedValue;
     const labels = {
       active: "Activo",
       activo: "Activo",
@@ -68,10 +71,14 @@ function readableSurvivorStatus(survivor, refuges) {
       "en riesgo": "En riesgo",
       threatened: "En riesgo",
       peligro: "En riesgo",
-      lost: "No activo",
-      inactive: "No activo",
-      inactivo: "No activo",
-      eliminado: "No activo",
+      lost: "No sobreviviente",
+      inactive: "No sobreviviente",
+      inactivo: "No sobreviviente",
+      eliminado: "No sobreviviente",
+      "mordido por zombie": "Mordido por zombie",
+      "mordido por zombi": "Mordido por zombie",
+      "mordida por zombie": "Mordido por zombie",
+      "mordida por zombi": "Mordido por zombie",
       rescued: "A salvo",
       rescatado: "A salvo",
     };
@@ -84,7 +91,7 @@ function readableSurvivorStatus(survivor, refuges) {
       return value.trim();
     }
   }
-  return survivor.activo === true ? "Activo" : survivor.activo === false ? "No activo" : "";
+  return survivor.activo === true ? "Activo" : survivor.activo === false ? "No sobreviviente" : "";
 }
 
 function readableMetric(value) {
@@ -206,6 +213,8 @@ export default function App() {
   const [scenarioLoading, setScenarioLoading] = useState(false);
   const [turnLoading, setTurnLoading] = useState(false);
   const [stepLoading, setStepLoading] = useState(false);
+  const [dispatchLoading, setDispatchLoading] = useState(false);
+  const [dispatchFeedback, setDispatchFeedback] = useState("");
   const [stepFeedback, setStepFeedback] = useState("");
   const [routeLookup, setRouteLookup] = useState({
     key: "",
@@ -628,6 +637,22 @@ export default function App() {
     }
   };
 
+  const handleDispatchVehicle = async (vehiculoId, sobrevivienteId) => {
+    if (mode !== "api" || dispatchLoading) return;
+    setDispatchLoading(true);
+    setDispatchFeedback("");
+    try {
+      const result = await dispatchVehicle({ vehiculoId, sobrevivienteId });
+      if (result?.despachado !== true) throw new Error("El servidor rechazó el despacho.");
+      setDispatchFeedback("Vehículo despachado; se actualizará el estado del rescate.");
+      await refresh();
+    } catch (dispatchError) {
+      setDispatchFeedback(dispatchError.message || "No se pudo despachar el vehículo.");
+    } finally {
+      setDispatchLoading(false);
+    }
+  };
+
   if (!world) {
     return (
       <main className="loading-screen" aria-live="polite">
@@ -722,7 +747,7 @@ export default function App() {
           </button>
         </div>
         <StatsPanel world={activeWorld} />
-        <ProFeaturesPanel world={activeWorld} mode={mode} />
+        <ProFeaturesPanel world={activeWorld} mode={mode} onDispatch={handleDispatchVehicle} dispatchLoading={dispatchLoading} dispatchFeedback={dispatchFeedback} />
         <div className="workspace">
           <div className="map-column">
             <SurvivorDetails

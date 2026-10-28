@@ -97,6 +97,7 @@ function displayValue(value, suffix = "") {
 
 export default function RescueVehiclesLayer({ world }) {
   const vehicles = world?.rescate?.vehiculos ?? world?.rescue?.vehicles;
+  const refuges = world?.refugios ?? world?.refuges ?? [];
   const nodes = world?.nodos ?? world?.nodes ?? [];
 
   const nodeMap = useMemo(
@@ -127,9 +128,14 @@ export default function RescueVehiclesLayer({ world }) {
     const passengers = firstValue(vehicle, "pasajeros", "ocupantes", "passengers", "occupants");
     const capacity = firstValue(vehicle, "capacidad", "capacity", "capacidadPersonas");
     const speed = firstValue(vehicle, "velocidad", "speed");
-    const target = firstValue(vehicle, "nodoObjetivo", "targetNode", "destino", "destination");
-    const targetNode = nodeMap.get(String(target));
-    const targetName = targetNode
+    const target = firstValue(vehicle, "refugioId", "refugeId", "idRefugio", "shelterId", "nodoObjetivo", "targetNode", "destino", "destination");
+    const targetRefuge = Array.isArray(refuges) ? refuges.find((refuge) =>
+      String(refuge.id ?? refuge.refugioId) === String(target) || String(refuge.nodo ?? refuge.node) === String(target)
+    ) : null;
+    const targetNode = nodeMap.get(String(targetRefuge?.nodo ?? targetRefuge?.node ?? target));
+    const targetName = targetRefuge
+      ? readableName(firstValue(targetRefuge, "nombre", "name", "displayName", "descripcion", "description"), `Refugio ${targetRefuge.id ?? targetRefuge.refugioId ?? "asignado"}`)
+      : targetNode
       ? readableName(
           firstValue(targetNode, "nombre", "name", "displayName", "descripcion", "description"),
           "Refugio asignado",
@@ -152,7 +158,7 @@ export default function RescueVehiclesLayer({ world }) {
             {passengers !== undefined && <span>Personas a bordo: {displayValue(passengers)}</span>}
             {capacity !== undefined && <span>Capacidad: {displayValue(capacity, " personas")}</span>}
             {speed !== undefined && <span>Velocidad: {displayValue(speed, " km/h")}</span>}
-            {target !== undefined && <span>Destino: {targetName}</span>}
+            {target !== undefined && <span>Se dirige a: {targetName}</span>}
           </div>
         </Popup>
       </Marker>
