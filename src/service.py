@@ -64,37 +64,43 @@ class RouteService:
             # La respuesta del contrato es solo el siguiente nodo, no la ruta completa.
             return paths[0][1] if paths and len(paths[0]) > 1 else node
 
-    def routes_for(self, survivor_id: str, node: str | None = None, limit: int = 3) -> list[list[str]]:
-        """Devuelve las mejores rutas seguras hacia el refugio asignado o uno alcanzable."""
+    def _routes_and_refuge_for(
+        self, survivor_id: str, node: str | None = None, limit: int = 3
+    ) -> tuple[Refuge | None, list[list[str]]]:
+        """Devuelve las rutas y conserva la identidad del refugio que las origina."""
         with self._lock:
             survivor = self.world.survivors.get(survivor_id)
             if survivor is None or not survivor.active:
-                return []
+                return None, []
             start = node or survivor.node
             if start not in self.graph.nodes:
-                return []
+                return None, []
             refuge_signature = tuple(sorted((r.id, r.node) for r in self.world.refuges.values()))
             key = (survivor.refuge_id, refuge_signature, start, limit,
                    self.horde_radius, danger_signature(self.world))
             cached = self._route_cache.get(key)
             if cached is not None:
-                return [path.copy() for path in cached]
-            result = select_refuge_routes(
+                refuge, routes = cached
+                return refuge, [path.copy() for path in routes]
+            refuge, routes = select_refuge_routes(
                 self.graph, self.world, start, self.world.refuges.values(),
                 preferred_refuge_id=survivor.refuge_id, limit=limit,
-                horde_radius=self.horde_radius,
+                horde_radius=self.horde_radius, return_refuge=True,
             )
-            self._route_cache.put(key, result)
-            return [path.copy() for path in result]
+            self._route_cache.put(key, (refuge, routes))
+            return refuge, [path.copy() for path in routes]
+
+    def routes_for(self, survivor_id: str, node: str | None = None, limit: int = 3) -> list[list[str]]:
+        """Devuelve las mejores rutas seguras hacia el refugio asignado o uno alcanzable."""
+        return self._routes_and_refuge_for(survivor_id, node, limit)[1]
 
     def route_details(self, survivor_id: str) -> dict | None:
         with self._lock:
             survivor = self.world.survivors.get(survivor_id)
-            paths = self.routes_for(survivor_id)
+            refuge, paths = self._routes_and_refuge_for(survivor_id)
             if survivor is None or not paths:
                 return None
             primary = paths[0]
-            refuge = next((r for r in self.world.refuges.values() if r.node == primary[-1]), None)
             streets = []
             for a, b in zip(primary, primary[1:]):
                 edge = min(
@@ -175,8 +181,7 @@ class RouteService:
         for survivor in self.world.survivors.values():
             if not survivor.active:
                 continue
-            refuge = self.world.refuges[survivor.refuge_id]
-            paths = self.routes_for(survivor.id, survivor.node, limit=1)
+            refuge, paths = self._routes_and_refuge_for(survivor.id, survivor.node, limit=1)
             if not paths:
                 continue
             path = paths[0]
@@ -194,7 +199,7 @@ class RouteService:
             routes.append(
                 {
                     "sobrevivienteId": survivor.id,
-                        "refugioId": refuge.id if path[-1] == refuge.node else next((r.id for r in self.world.refuges.values() if r.node == path[-1]), None),
+                    "refugioId": refuge.id if refuge else None,
                     "nodos": path,
                     "nombresNodos": [self.graph.node_name(node) for node in path],
                     "distanciaNodos": len(path) - 1,

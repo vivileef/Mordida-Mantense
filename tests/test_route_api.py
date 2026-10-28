@@ -245,6 +245,52 @@ class RoutingBehaviorTests(unittest.TestCase):
         service.world.zombies = {"Z": Zombie("Z", ZombieType.WALKER, "D")}
         self.assertEqual(service.routes_for("S")[0][-1], "E")
 
+    def test_planned_routes_handles_missing_assigned_refuge(self):
+        service = RouteService(self.graph)
+        service.world.survivors = {"S-MISSING-REFUGE": Survivor("S-MISSING-REFUGE", "A", "R-NO-EXISTE")}
+        service.world.refuges = {
+            "R": Refuge("R", "D"),
+            "R2": Refuge("R2", "E"),
+        }
+        service.world.zombies = {}
+
+        planned = service.planned_routes()
+
+        self.assertEqual(len(planned), 1)
+        self.assertEqual(planned[0]["sobrevivienteId"], "S-MISSING-REFUGE")
+        self.assertEqual(planned[0]["refugioId"], "R")
+        self.assertEqual(planned[0]["nodos"][0], "A")
+        self.assertEqual(planned[0]["nodos"][-1], "D")
+
+    def test_route_details_preserves_preferred_refuge_when_nodes_are_shared(self):
+        service = RouteService(self.graph)
+        service.world.survivors = {"S-SHARED-REFUGE": Survivor("S-SHARED-REFUGE", "A", "R-PREFERIDO")}
+        # El orden de inserción hace que route_details encuentre primero el otro ID
+        # si pierde la identidad seleccionada por el desempate del motor.
+        service.world.refuges = {
+            "R-OTRO": Refuge("R-OTRO", "D"),
+            "R-PREFERIDO": Refuge("R-PREFERIDO", "D"),
+        }
+        service.world.zombies = {}
+
+        routes = service.routes_for("S-SHARED-REFUGE", limit=1)
+        details = service.route_details("S-SHARED-REFUGE")
+
+        self.assertEqual(routes[0][-1], "D")
+        self.assertEqual(details["nodos"][-1], "D")
+        self.assertEqual(details["refugioId"], "R-PREFERIDO")
+
+    def test_next_step_stays_when_all_first_moves_are_unsafe(self):
+        service = RouteService(self.graph)
+        service.world.survivors = {"S-TRAPPED": Survivor("S-TRAPPED", "A", "R")}
+        service.world.refuges = {"R": Refuge("R", "D")}
+        service.world.zombies = {
+            "Z-B": Zombie("Z-B", ZombieType.WALKER, "B"),
+            "Z-C": Zombie("Z-C", ZombieType.WALKER, "C"),
+        }
+
+        self.assertEqual(service.next_step("S-TRAPPED", "A", 0), "A")
+
     def test_zombie_horde_radius_configurable(self):
         self.world.zombies = {"Z": Zombie("Z", ZombieType.HORDE, "B")}
         self.assertIsNone(shortest_safe_path(self.graph, self.world, "A", "D", horde_radius=1))
@@ -346,6 +392,51 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(health.headers["Access-Control-Allow-Origin"], "*")
         preflight = self.request("/paso", method="OPTIONS")
         self.assertIn("x-api-key", preflight.headers["Access-Control-Allow-Headers"])
+
+    def test_post_paso_stays_when_all_first_moves_are_unsafe(self):
+        old_service = ApiHandler.service
+        service = RouteService(graph_fixture())
+        service.world.survivors = {"S-TRAPPED": Survivor("S-TRAPPED", "A", "R")}
+        service.world.refuges = {"R": Refuge("R", "D")}
+        service.world.zombies = {
+            "Z-B": Zombie("Z-B", ZombieType.WALKER, "B"),
+            "Z-C": Zombie("Z-C", ZombieType.WALKER, "C"),
+        }
+        ApiHandler.service = service
+        try:
+            response = self.request(
+                "/paso",
+                "POST",
+                {"sobrevivienteId": "S-TRAPPED", "nodoActual": "A", "turno": 0},
+            )
+            payload = json.loads(response.read())
+
+            self.assertEqual(set(payload), {"siguienteNodo"})
+            self.assertEqual(payload["siguienteNodo"], "A")
+        finally:
+            ApiHandler.service = old_service
+
+    def test_get_estado_handles_missing_assigned_refuge(self):
+        old_service = ApiHandler.service
+        service = RouteService(graph_fixture())
+        service.world.survivors = {
+            "S-MISSING-REFUGE": Survivor("S-MISSING-REFUGE", "A", "R-NO-EXISTE")
+        }
+        service.world.refuges = {
+            "R": Refuge("R", "D"),
+            "R2": Refuge("R2", "E"),
+        }
+        service.world.zombies = {}
+        ApiHandler.service = service
+        try:
+            response = self.request("/estado")
+            payload = json.loads(response.read())
+
+            self.assertEqual(response.status, 200)
+            self.assertEqual(payload["rutas"][0]["sobrevivienteId"], "S-MISSING-REFUGE")
+            self.assertEqual(payload["rutas"][0]["refugioId"], "R")
+        finally:
+            ApiHandler.service = old_service
 
 
 if __name__ == "__main__":

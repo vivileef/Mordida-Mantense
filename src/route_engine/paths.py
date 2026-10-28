@@ -155,7 +155,8 @@ def select_refuge_routes(
     preferred_refuge_id: str | None = None,
     limit: int = 3,
     horde_radius: int = 1,
-) -> list[list[str]]:
+    return_refuge: bool = False,
+) -> list[list[str]] | tuple[object | None, list[list[str]]]:
     """Elige el refugio seguro de menor distancia y genera rutas alternativas."""
     danger = dangerous_nodes(graph, world, horde_radius)
     frontal = dangerous_edges(world)
@@ -173,13 +174,15 @@ def select_refuge_routes(
         # El preferido solo resuelve empates; el criterio principal es distancia.
         candidates.append((distance, "" if refuge.id == preferred_refuge_id else refuge.id, refuge, path))
     if not candidates:
-        return []
+        return (None, []) if return_refuge else []
     candidates.sort(key=lambda item: (item[0], item[1]))
     chosen = candidates[0]
     if limit <= 1:
-        return [chosen[3]]
-    alternatives = alternative_safe_paths(
-        graph, world, start, chosen[2].node,
-        count_paths=max(1, limit), horde_radius=horde_radius,
-    )
-    return alternatives[:max(1, limit)] or [chosen[3]]
+        routes = [chosen[3]]
+    else:
+        alternatives = alternative_safe_paths(
+            graph, world, start, chosen[2].node,
+            count_paths=max(1, limit), horde_radius=horde_radius,
+        )
+        routes = alternatives[:max(1, limit)] or [chosen[3]]
+    return (chosen[2], routes) if return_refuge else routes
