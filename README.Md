@@ -80,6 +80,25 @@ automáticamente movimientos para todos los sobrevivientes.
   instancia, un servicio de contenedores, una función u otra arquitectura.
   Este README no asume una plataforma ni un endpoint público.
 
+### Guía rápida para el equipo
+
+- **Backend:** desde la raíz, ejecuta `python -m src.server`. Define
+  `MANTA_API_KEY` si usarás rutas protegidas. El mapa viene de `GET /mapa` y
+  el estado de `GET /estado`.
+- **Frontend:** en otra terminal ejecuta `cd frontend`, `npm install` y
+  `npm run dev`. Para conectar al servidor local configura
+  `VITE_API_BASE_URL=http://localhost:8080` en `frontend/.env`; los detalles
+  de DEMO, API y despliegue están en `frontend/README.md`.
+- **Calles bloqueadas en API REAL:** `GET /estado` debe incluir
+  `aristasBloqueadas` con pares de IDs de nodos, por ejemplo `[["A", "B"]]`.
+  El mapa vincula cada par con la geometría de `GET /mapa`, aunque los IDs
+  lleguen invertidos. La capa **Calles bloqueadas** muestra una línea naranja
+  discontinua y una barrera. Si falta, comprueba que ambos endpoints usen los
+  mismos IDs y que `/estado` publique el bloqueo.
+- **Colaboración:** los cambios del motor y API van en `src/`; los de interfaz
+  y mapa en `frontend/src/`. No publiques secretos ni los incluyas en variables
+  `VITE_*`.
+
 ### Diagrama de arquitectura
 
 ```mermaid
