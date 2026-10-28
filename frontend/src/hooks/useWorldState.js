@@ -4,6 +4,7 @@ import {
   fetchMapState,
   fetchWorldState,
   selectScenario as requestScenario,
+  simulateTurn as requestSimulateTurn,
 } from "../services/simulatorApi";
 import { createDemoService } from "../services/simulationService";
 
@@ -29,7 +30,13 @@ export function useWorldState({ demo = configuredMode === "demo", paused = false
     try {
       const state = demo ? await demoService.current.advance() : await fetchWorldState();
       if (!mounted.current || activeSource.current !== demo || sourceVersion.current !== version) return;
-      setWorld(demo ? state : { ...state, ...(mapRef.current || {}) });
+      let map = mapRef.current;
+      if (!demo && !map) {
+        map = await fetchMapState();
+        if (!mounted.current || activeSource.current !== demo || sourceVersion.current !== version) return;
+        mapRef.current = map;
+      }
+      setWorld(demo ? state : { ...state, ...(map || {}) });
       setConnection("connected");
       setError("");
       setLastUpdated(new Date());
@@ -89,6 +96,34 @@ export function useWorldState({ demo = configuredMode === "demo", paused = false
     try {
       await requestScenario(scenario);
       if (!mounted.current || activeSource.current !== demo || sourceVersion.current !== version) return false;
+      const state = await fetchWorldState();
+      if (!mounted.current || activeSource.current !== demo || sourceVersion.current !== version) return false;
+      setWorld({ ...state, ...(mapRef.current || {}) });
+      setConnection("connected");
+      setError("");
+      setLastUpdated(new Date());
+      return true;
+    } catch (loadError) {
+      if (mounted.current && sourceVersion.current === version) {
+        setConnection("error");
+        setError(loadError.message);
+      }
+      return false;
+    } finally {
+      inFlightCount.current = Math.max(0, inFlightCount.current - 1);
+    }
+  }, [demo]);
+
+  const advanceTurn = useCallback(async () => {
+    if (demo || activeSource.current !== demo) return false;
+    const version = ++sourceVersion.current;
+    inFlightCount.current += 1;
+    try {
+      const result = await requestSimulateTurn();
+      if (!mounted.current || activeSource.current !== demo || sourceVersion.current !== version) return false;
+      if (typeof result?.turno !== "number" || !Number.isFinite(result.turno)) {
+        throw new Error("POST /simular-turno no devolvió un número de turno válido.");
+      }
       const state = await fetchWorldState();
       if (!mounted.current || activeSource.current !== demo || sourceVersion.current !== version) return false;
       setWorld({ ...state, ...(mapRef.current || {}) });
@@ -168,6 +203,7 @@ export function useWorldState({ demo = configuredMode === "demo", paused = false
     refresh: load,
     refreshMap,
     loadScenario,
+    advanceTurn,
     pollInterval,
   };
 }

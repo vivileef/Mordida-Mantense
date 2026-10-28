@@ -48,9 +48,22 @@ export function normalizeRoute(route) {
 
 export function normalizeWorld(world) {
   if (!world || typeof world !== "object") throw new Error("El estado del mundo no es válido.");
-  const nodes = (world.nodos ?? world.nodes ?? []).map(normalizeNode).filter(Boolean);
-  const streets = (world.calles ?? world.streets ?? []).map(normalizeStreet).filter(Boolean);
-  const routes = (world.rutas ?? world.routes ?? []).map(normalizeRoute).filter(Boolean);
+  const nodesInput = world.nodos ?? world.nodes;
+  const streetsInput = world.calles ?? world.streets;
+  const routesInput = world.rutas ?? world.routes;
+  const blockedInput = world.aristasBloqueadas ?? world.blockedEdges;
+  const eventsInput = world.eventos ?? world.events;
+  const sheltersInput = world.refugios ?? world.refuges;
+  const nodes = (Array.isArray(nodesInput) ? nodesInput : []).map(normalizeNode).filter(Boolean);
+  const streets = (Array.isArray(streetsInput) ? streetsInput : []).map(normalizeStreet).filter(Boolean);
+  const routes = (Array.isArray(routesInput) ? routesInput : []).map(normalizeRoute).filter(Boolean);
+  const camposEstadoAusentes = [
+    ["sobrevivientes", world.sobrevivientes ?? world.survivors],
+    ["rutas", routesInput],
+    ["aristasBloqueadas", blockedInput],
+    ["eventos", eventsInput],
+    ["refugios", sheltersInput],
+  ].filter(([, value]) => !Array.isArray(value)).map(([field]) => field);
 
   return {
     ...world,
@@ -58,7 +71,11 @@ export function normalizeWorld(world) {
     nodos: nodes,
     calles: streets,
     rutas: routes,
-    aristasBloqueadas: (world.aristasBloqueadas ?? world.blockedEdges ?? []).map((edge) => edge.map(String)),
+    aristasBloqueadas: (Array.isArray(blockedInput) ? blockedInput : [])
+      .filter((edge) => Array.isArray(edge) && edge.length >= 2)
+      .map((edge) => edge.map(String)),
+    eventos: Array.isArray(eventsInput) ? eventsInput : [],
+    eventosProgramados: Array.isArray(world.eventosProgramados) ? world.eventosProgramados : [],
     zombies: (world.zombies ?? []).map((zombie) => ({
       ...zombie,
       nodo: String(zombie.nodo ?? zombie.node ?? ""),
@@ -70,11 +87,12 @@ export function normalizeWorld(world) {
       refugioId: survivor.refugioId ?? survivor.refugeId,
       activo: survivor.activo ?? survivor.active ?? true,
     })),
-    refugios: (world.refugios ?? world.refuges ?? []).map((refuge) => ({
+    refugios: (Array.isArray(sheltersInput) ? sheltersInput : []).map((refuge) => ({
       ...refuge,
       nodo: String(refuge.nodo ?? refuge.node ?? ""),
       capacidad: refuge.capacidad ?? refuge.capacity,
     })),
+    camposEstadoAusentes,
   };
 }
 
@@ -112,10 +130,43 @@ function geometriesMatch(first, second) {
     );
 }
 
+function correspondingLocalStreet(apiStreet, candidates) {
+  if (candidates.length <= 1) return candidates[0] ?? null;
+
+  const apiName = String(apiStreet.nombre ?? apiStreet.name ?? "").trim();
+  const hasUsefulName = apiName && !/^calle sin nombre$/i.test(apiName);
+  let matches = hasUsefulName
+    ? candidates.filter((street) => String(street.nombre ?? street.name ?? "").trim() === apiName)
+    : candidates;
+  if (matches.length > 1) {
+    const apiType = apiStreet.tipo ?? apiStreet.type;
+    if (apiType != null) {
+      const sameType = matches.filter((street) =>
+        String(street.tipo ?? street.type) === String(apiType),
+      );
+      if (sameType.length > 0) matches = sameType;
+    }
+  }
+  if (matches.length > 1) {
+    const apiDistance = Number(apiStreet.distancia_m ?? apiStreet.distance_m ?? apiStreet.distance);
+    if (Number.isFinite(apiDistance)) {
+      const sameDistance = matches.filter((street) =>
+        Math.abs(Number(street.distancia_m ?? street.distance_m ?? street.distance) - apiDistance) < 0.01,
+      );
+      if (sameDistance.length > 0) matches = sameDistance;
+    }
+  }
+  if (matches.length === 1) return matches[0];
+  if (matches.length > 1 && matches.every((street) => geometriesMatch(street, matches[0]))) {
+    return matches[0];
+  }
+  return null;
+}
+
 /**
  * Reuses local road geometry only after the API graph's nodes and directed
  * connections have been verified against the local network. Existing API
- * geometries are compared and any local replacement is reported as a warning.
+ * geometries remain authoritative; ambiguous local parallel edges are not guessed.
  */
 export function resolveRoadMap(apiMap, localMap) {
   const api = normalizeMap(apiMap ?? {});
@@ -164,13 +215,18 @@ export function resolveRoadMap(apiMap, localMap) {
 
   let reusedGeometry = 0;
   let differentGeometry = 0;
-  const occurrenceByEdge = new Map();
+  let ambiguousGeometry = 0;
   const calles = api.calles.map((street) => {
     const key = directedStreetKey(street.origen, street.destino);
-    const occurrence = occurrenceByEdge.get(key) ?? 0;
-    occurrenceByEdge.set(key, occurrence + 1);
-    const localStreet = localStreetGroups.get(key)?.[occurrence];
-    if (!localStreet) return street;
+    const localCandidates = localStreetGroups.get(key) ?? [];
+    const localStreet = correspondingLocalStreet(street, localCandidates);
+    if (!localStreet) {
+      const apiGeometry = geometryToPositions(
+        street.geometry ?? street.geometria ?? street.coordinates ?? street.coordenadas,
+      );
+      if (apiGeometry.length < 2 && localCandidates.length > 1) ambiguousGeometry += 1;
+      return street;
+    }
 
     const apiGeometry = geometryToPositions(
       street.geometry ?? street.geometria ?? street.coordinates ?? street.coordenadas,
@@ -181,11 +237,8 @@ export function resolveRoadMap(apiMap, localMap) {
     if (apiGeometry.length > 1) {
       if (localGeometry.length > 1 && !geometriesMatch(street, localStreet)) {
         differentGeometry += 1;
-        return {
-          ...street,
-          geometry: localStreet.geometry ?? localStreet.geometria ?? localStreet.coordinates ?? localStreet.coordenadas,
-        };
       }
+      // Valid API geometry remains authoritative when it is available.
       return street;
     }
     if (localGeometry.length > 1) {
@@ -205,7 +258,12 @@ export function resolveRoadMap(apiMap, localMap) {
   }
   if (differentGeometry > 0) {
     warnings.push(
-      `La geometría API difiere de la red local en ${differentGeometry} calles compatibles; se usa la geometría local y se conserva la ruta del backend.`,
+      `La geometría API difiere de la red local en ${differentGeometry} calles compatibles; se conserva la geometría entregada por la API.`,
+    );
+  }
+  if (ambiguousGeometry > 0) {
+    warnings.push(
+      `${ambiguousGeometry} calles API sin geometría coinciden con conexiones paralelas ambiguas; no se eligió geometría local para esos tramos.`,
     );
   }
   return { nodos: api.nodos, calles, compatible, warnings };
@@ -263,35 +321,94 @@ export function streetGeometry(street, nodeMap, { allowEndpointFallback = false 
   return origin && destination ? [origin, destination] : [];
 }
 
+export function uniqueStreetPaths(streets, nodeMap) {
+  const seen = new Set();
+  const paths = [];
+
+  (Array.isArray(streets) ? streets : []).forEach((street, index) => {
+    const path = streetGeometry(street, nodeMap);
+    if (path.length < 2) return;
+
+    const forward = JSON.stringify(path);
+    const reverse = JSON.stringify([...path].reverse());
+    const geometryKey = forward <= reverse ? forward : reverse;
+    const key = `${edgeKey(street.origen, street.destino)}|${geometryKey}`;
+    if (seen.has(key)) return;
+
+    seen.add(key);
+    paths.push({ street, path, index });
+  });
+
+  return paths;
+}
+
 function explicitStreetGeometry(street) {
   return geometryToPositions(
     street.geometry ?? street.geometria ?? street.coordinates ?? street.coordenadas,
   );
 }
 
-function mappedStreetGeometry(origin, destination, streetMap) {
-  const direct = streetMap.get(`${origin}|${destination}`);
-  const directGeometry = direct && explicitStreetGeometry(direct);
-  if (directGeometry?.length > 1) return directGeometry;
+function streetCandidates(value) {
+  const streets = Array.isArray(value) ? value : value ? [value] : [];
+  return streets.map((street) => ({ street }));
+}
 
-  const reverse = streetMap.get(`${destination}|${origin}`);
-  const reverseGeometry = reverse && explicitStreetGeometry(reverse);
-  return reverseGeometry?.length > 1 ? [...reverseGeometry].reverse() : [];
+function mappedStreetGeometry(origin, destination, streetMap, routeStreet) {
+  const candidates = streetCandidates(streetMap.get(`${origin}|${destination}`));
+  if (candidates.length === 0) return [];
+
+  const routeName = String(routeStreet?.nombre ?? routeStreet?.name ?? "").trim();
+  const hasRouteName = routeName && !/^calle sin nombre$/i.test(routeName);
+  const namedCandidates = hasRouteName
+    ? candidates.filter(({ street }) =>
+        String(street.nombre ?? street.name ?? "").trim() === routeName,
+      )
+    : candidates;
+  if (hasRouteName && namedCandidates.length === 0) return [];
+
+  const withGeometry = namedCandidates.flatMap(({ street }) => {
+    const positions = explicitStreetGeometry(street);
+    if (positions.length < 2) return [];
+    return [{ positions }];
+  });
+  if (withGeometry.length === 0) return [];
+
+  const uniquePaths = new Map(
+    withGeometry.map(({ positions }) => [JSON.stringify(positions), positions]),
+  );
+  // With parallel roads, node IDs alone cannot identify which geometry the
+  // route uses. Draw only when the route's street name disambiguates it or
+  // every candidate has the same geometry.
+  return uniquePaths.size === 1 ? uniquePaths.values().next().value : [];
 }
 
 export function routeGeometry(route, nodeMap, streetMap) {
   const routeNodes = route.nodes ?? route.nodos ?? [];
   if (Array.isArray(routeNodes) && routeNodes.length > 1) {
     const positions = [];
+    const routeStreets = route.streets ?? route.calles ?? [];
     for (let index = 0; index < routeNodes.length - 1; index += 1) {
       const origin = String(routeNodes[index]);
       const destination = String(routeNodes[index + 1]);
       if (!nodeMap.has(origin) || !nodeMap.has(destination)) return [];
-      const segment = mappedStreetGeometry(
+      const hasConnection = streetMap.has(`${origin}|${destination}`);
+      if (!hasConnection) return [];
+      const routeStreet = routeStreets[index]
+        ? normalizeStreet(routeStreets[index])
+        : null;
+      if (routeStreets[index] && !routeStreet) return [];
+      if (routeStreet && !(
+        routeStreet.origen === origin && routeStreet.destino === destination
+      )) return [];
+      let segment = mappedStreetGeometry(
         origin,
         destination,
         streetMap,
+        routeStreet,
       );
+      if (segment.length < 2 && routeStreet) {
+        segment = explicitStreetGeometry(routeStreet);
+      }
       if (segment.length < 2) return [];
       positions.push(...(index ? segment.slice(1) : segment));
     }
@@ -305,12 +422,12 @@ export function routeGeometry(route, nodeMap, streetMap) {
       const street = normalizeStreet(routeStreets[index]);
       if (!street) return [];
       if (!nodeMap.has(street.origen) || !nodeMap.has(street.destino)) return [];
-      if (!streetMap.has(`${street.origen}|${street.destino}`) &&
-          !streetMap.has(`${street.destino}|${street.origen}`)) return [];
+      if (!streetMap.has(`${street.origen}|${street.destino}`)) return [];
       const mappedSegment = mappedStreetGeometry(
         street.origen,
         street.destino,
         streetMap,
+        street,
       );
       const segment = mappedSegment.length > 1
         ? mappedSegment

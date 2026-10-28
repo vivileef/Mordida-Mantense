@@ -54,7 +54,7 @@ VITE_API_TIMEOUT_MS=5000
 VITE_DATA_MODE=demo
 ```
 
-Luego reinicia `npm run dev` y selecciona **API REAL**. `VITE_DATA_MODE=api` permite abrir directamente en modo API; el valor `demo` mantiene el modo DEMO por defecto. El adaptador consulta `GET /estado` cada ciclo y `GET /mapa` al iniciar API o mediante una acción explícita de refresco del mapa; así no se descarga el grafo estático cada dos segundos. Ambas respuestas se validan, se aplica un timeout configurable y, si una consulta falla, se conserva el último estado válido y se muestra el error. La función `requestNextStep` deja preparado el contrato `POST /paso` para una acción explícita de planificación; no se llama para todos los sobrevivientes desde el navegador.
+Luego reinicia `npm run dev` y selecciona **API REAL**. `VITE_DATA_MODE=api` permite abrir directamente en modo API; el valor `demo` mantiene el modo DEMO por defecto. El adaptador consulta `GET /estado` cada ciclo y `GET /mapa` al iniciar API o mediante una acción explícita de refresco del mapa; así no se descarga el grafo estático cada dos segundos. Ambas respuestas se validan, se aplica un timeout configurable y, si una consulta falla, se conserva el último estado válido y se muestra el error. El botón `Avanzar un paso` llama `POST /paso` y `POST /mover-sobreviviente` solo para la persona seleccionada; no se envían acciones masivas. Consulta `INTEGRACION_BACKEND.md` para el detalle.
 
 El backend de este repositorio se inicia desde la raíz con:
 

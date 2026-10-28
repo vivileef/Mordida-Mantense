@@ -7,7 +7,7 @@ import RoutePanel from "./components/RoutePanel";
 import EventLog from "./components/EventLog";
 import SurvivalGuide from "./components/SurvivalGuide";
 import { useWorldState } from "./hooks/useWorldState";
-import { moveSurvivor, requestNextStep } from "./services/simulatorApi";
+import { fetchSurvivorRoute, moveSurvivor, requestNextStep } from "./services/simulatorApi";
 import {
   createDisplayNames,
   displayEntityName,
@@ -19,13 +19,15 @@ export default function App() {
   const [paused, setPaused] = useState(false);
   const [selectedId, setSelectedId] = useState(null);
   const [startedAt] = useState(Date.now());
-  const { world, connection, error, lastUpdated, reset, refresh, refreshMap, loadScenario, pollInterval } =
+  const { world, connection, error, lastUpdated, reset, refresh, refreshMap, loadScenario, advanceTurn, pollInterval } =
     useWorldState({ demo: mode === "demo", paused });
   const [elapsed, setElapsed] = useState("00:00");
   const [guideOpen, setGuideOpen] = useState(false);
   const [scenarioLoading, setScenarioLoading] = useState(false);
+  const [turnLoading, setTurnLoading] = useState(false);
   const [stepLoading, setStepLoading] = useState(false);
   const [stepFeedback, setStepFeedback] = useState("");
+  const [routeLookup, setRouteLookup] = useState({ key: "", status: "idle", route: null, error: "" });
   const stale = mode === "api" && lastUpdated && Date.now() - lastUpdated.getTime() > pollInterval * 3;
 
   useEffect(() => {
@@ -64,18 +66,93 @@ export default function App() {
     setSelectedId(nextId == null ? null : String(nextId));
   }, [world, selectedId]);
 
-  const selectedRoute = useMemo(
+  const routeFromState = useMemo(
     () => world?.rutas?.find(
       (route) => String(route.survivorId ?? route.sobrevivienteId ?? "") === selectedId,
     ),
     [world, selectedId],
   );
-  const displayNames = createDisplayNames(world);
-  const selectedSurvivor = world?.sobrevivientes?.find(
-    (item) => String(item.id) === String(selectedId),
+  const displayNames = useMemo(() => createDisplayNames(world), [
+    world?.zombies,
+    world?.sobrevivientes,
+    world?.refugios,
+  ]);
+  const selectedSurvivor = useMemo(
+    () => world?.sobrevivientes?.find((item) => String(item.id) === String(selectedId)),
+    [world?.sobrevivientes, selectedId],
   );
-  const selectedNode = world?.nodos?.find(
-    (node) => String(node.id) === String(selectedSurvivor?.nodo),
+  const routeStateKey = useMemo(() => {
+    if (!world || !selectedSurvivor) return "";
+    const zombieState = (world.zombies ?? []).map((zombie) => [
+      zombie.id,
+      zombie.nodo,
+      zombie.tipo,
+      zombie.visible,
+      zombie.cantidad,
+    ]);
+    const refugeState = (world.refugios ?? []).map((refuge) => [
+      refuge.id,
+      refuge.nodo ?? refuge.node,
+    ]);
+    const blockedEdges = (world.aristasBloqueadas ?? [])
+      .filter((edge) => Array.isArray(edge) && edge.length >= 2)
+      .map((edge) => [String(edge[0]), String(edge[1])].sort().join("|"))
+      .sort();
+    return JSON.stringify([
+      world.turno,
+      selectedSurvivor.id,
+      selectedSurvivor.nodo,
+      selectedSurvivor.refugioId,
+      selectedSurvivor.activo,
+      zombieState,
+      refugeState,
+      blockedEdges,
+    ]);
+  }, [world?.turno, world?.zombies, world?.aristasBloqueadas, selectedSurvivor]);
+  useEffect(() => {
+    let current = true;
+    if (mode !== "api" || !selectedSurvivor || !routeStateKey) {
+      setRouteLookup({ key: routeStateKey, status: "idle", route: null, error: "" });
+      return () => { current = false; };
+    }
+    if (routeFromState) {
+      setRouteLookup({ key: routeStateKey, status: "available", route: routeFromState, error: "" });
+      return () => { current = false; };
+    }
+
+    setRouteLookup({ key: routeStateKey, status: "loading", route: null, error: "" });
+    fetchSurvivorRoute(selectedSurvivor.id)
+      .then((route) => {
+        if (!current) return;
+        setRouteLookup({
+          key: routeStateKey,
+          status: route ? "available" : "unavailable",
+          route,
+          error: "",
+        });
+      })
+      .catch((routeError) => {
+        if (!current) return;
+        setRouteLookup({ key: routeStateKey, status: "error", route: null, error: routeError.message });
+      });
+    return () => { current = false; };
+  }, [mode, selectedId, selectedSurvivor?.id, routeStateKey, routeFromState]);
+  const selectedRoute = routeFromState ?? (
+    routeLookup.key === routeStateKey ? routeLookup.route : null
+  );
+  const displayWorld = useMemo(() => {
+    if (!world || !selectedRoute) return world;
+    const routes = world.rutas ?? [];
+    const routeId = String(selectedRoute.survivorId ?? selectedRoute.sobrevivienteId ?? "");
+    if (routes.some((route) => String(route.survivorId ?? route.sobrevivienteId ?? "") === routeId)) {
+      return world;
+    }
+    return { ...world, rutas: [...routes, selectedRoute] };
+  }, [world, selectedRoute]);
+  const visibleRouteLookup = routeLookup.key === routeStateKey ? routeLookup : null;
+  const selectedNode = useMemo(
+    () => world?.nodos?.find((node) => String(node.id) === String(selectedSurvivor?.nodo)),
+    [world?.nodos, selectedSurvivor?.nodo],
   );
 
   const handleLoadScenario = async (scenario) => {
@@ -85,6 +162,19 @@ export default function App() {
       await loadScenario(scenario);
     } finally {
       setScenarioLoading(false);
+    }
+  };
+
+  const handleAdvanceTurn = async () => {
+    setTurnLoading(true);
+    setStepFeedback("");
+    try {
+      const updated = await advanceTurn();
+      setStepFeedback(updated
+        ? "Turno avanzado; estado, rutas y eventos actualizados desde el backend."
+        : "No se pudo avanzar el turno. Revisa el estado de conexión y vuelve a intentarlo.");
+    } finally {
+      setTurnLoading(false);
     }
   };
 
@@ -106,8 +196,7 @@ export default function App() {
 
       const nodeExists = world.nodos?.some((node) => String(node.id) === destination);
       const connected = world.calles?.some((street) =>
-        (String(street.origen) === String(selectedSurvivor.nodo) && String(street.destino) === destination) ||
-        (String(street.destino) === String(selectedSurvivor.nodo) && String(street.origen) === destination),
+        String(street.origen) === String(selectedSurvivor.nodo) && String(street.destino) === destination,
       );
       const blocked = world.aristasBloqueadas?.some((edge) =>
         Array.isArray(edge) && edge.length >= 2 &&
@@ -185,13 +274,16 @@ export default function App() {
             onRefresh={refresh}
             onLoadScenario={handleLoadScenario}
             scenarioLoading={scenarioLoading}
+            onAdvanceTurn={handleAdvanceTurn}
+            turnLoading={turnLoading}
+            connection={connection}
           />
           <button className="button button--guide" type="button" onClick={() => setGuideOpen(true)}>Guía de supervivencia</button>
         </div>
         <StatsPanel world={world} />
         <div className="workspace">
           <MantaMap
-            world={world}
+            world={displayWorld}
             selectedId={selectedId}
             onSelect={setSelectedId}
             mode={mode}
@@ -199,10 +291,11 @@ export default function App() {
             lastUpdated={lastUpdated}
             stale={stale}
             onRefreshMap={refreshMap}
+            routeLookup={visibleRouteLookup}
           />
           <aside className="side-column">
-            <RoutePanel world={world} selectedId={selectedId} onSelect={setSelectedId} mode={mode} />
-            <EventLog events={world.eventos} world={world} />
+            <RoutePanel world={displayWorld} selectedId={selectedId} onSelect={setSelectedId} mode={mode} routeLookup={visibleRouteLookup} />
+            <EventLog events={world.eventos} scheduledEvents={world.eventosProgramados} world={world} />
           </aside>
         </div>
         {(selectedRoute || (mode === "api" && selectedSurvivor)) && (

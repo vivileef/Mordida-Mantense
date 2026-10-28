@@ -8,7 +8,9 @@ const api = createSimulatorApi(createHttpClient({ baseUrl, timeoutMs: requestTim
 
 export const fetchWorldState = api.fetchWorldState;
 export const fetchMapState = api.fetchMapState;
+export const fetchSurvivorRoute = api.fetchSurvivorRoute;
 export const requestNextStep = api.requestNextStep;
 export const moveSurvivor = api.moveSurvivor;
 export const selectScenario = api.selectScenario;
+export const simulateTurn = api.simulateTurn;
 export const apiConfigured = Boolean(baseUrl);

@@ -1,7 +1,6 @@
 import { divIcon } from "leaflet";
 import { Fragment, memo, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Circle,
   CircleMarker,
   MapContainer,
   Marker,
@@ -14,15 +13,16 @@ import {
 import { center } from "../data/demoWorld";
 import localRoadNetwork from "../data/mantaRoadNetwork.json";
 import {
-  isBlocked,
+  edgeKey,
   resolveRoadMap,
   routeGeometry,
-  streetGeometry,
+  uniqueStreetPaths,
 } from "../services/geo";
 import {
   createDisplayNames,
   displayEntityName,
   intersectionDisplayName,
+  shouldDisplayZombie,
   streetDisplayName,
 } from "../utils/presentation";
 
@@ -91,14 +91,13 @@ function RecenterMap() {
 function FitWorld({ positions }) {
   const map = useMap();
   const hasFittedWorld = useRef(false);
-  const positionsKey = positions.map(([lat, lng]) => `${lat},${lng}`).join(";");
 
   useEffect(() => {
     if (!hasFittedWorld.current && positions.length > 1) {
       map.fitBounds(positions, { padding: [24, 24], maxZoom: 15 });
       hasFittedWorld.current = true;
     }
-  }, [map, positionsKey]);
+  }, [map, positions]);
 
   return null;
 }
@@ -173,6 +172,7 @@ const MantaMap = memo(function MantaMap({
   lastUpdated,
   stale = false,
   onRefreshMap,
+  routeLookup,
 }) {
   const [layers, setLayers] = useState({
     streets: true,
@@ -205,39 +205,53 @@ const MantaMap = memo(function MantaMap({
     world?.refugios,
   ]);
   const nodeMap = useMemo(() => coordinates(mapWorld), [mapWorld?.nodos]);
+  const nodesById = useMemo(
+    () => new Map((mapWorld?.nodos || []).map((node) => [String(node.id), node])),
+    [mapWorld?.nodos],
+  );
   const streetMap = useMemo(
-    () => new Map(
-      (mapWorld?.calles || []).map((street) => [
-        `${street.origen}|${street.destino}`,
-        street,
-      ]),
-    ),
+    () => (mapWorld?.calles || []).reduce((groups, street) => {
+      const key = `${street.origen}|${street.destino}`;
+      const group = groups.get(key) ?? [];
+      group.push(street);
+      groups.set(key, group);
+      return groups;
+    }, new Map()),
     [mapWorld?.calles],
   );
-  const hasStreetGeometry = useMemo(
-    () => (mapWorld?.calles || []).some((street) =>
-      streetGeometry(street, nodeMap).length > 1,
-    ),
+  const streetPaths = useMemo(
+    () => uniqueStreetPaths(mapWorld?.calles || [], nodeMap),
     [mapWorld?.calles, nodeMap],
   );
-  const hasRouteGeometry = useMemo(
-    () => (world?.rutas || []).some(
-      (route) => routeGeometry(route, nodeMap, streetMap).length > 1,
-    ),
+  const hasStreetGeometry = streetPaths.length > 0;
+  const routePaths = useMemo(
+    () => (world?.rutas || []).map((route) => routeGeometry(route, nodeMap, streetMap)),
     [world?.rutas, nodeMap, streetMap],
+  );
+  const hasRouteGeometry = routePaths.some((path) => path.length > 1);
+  const blockedEdgeSignature = (world?.aristasBloqueadas || [])
+    .filter((edge) => Array.isArray(edge) && edge.length >= 2)
+    .map((edge) => edgeKey(edge[0], edge[1]))
+    .sort()
+    .join("\u0000");
+  const blockedEdges = useMemo(
+    () => new Set(blockedEdgeSignature ? blockedEdgeSignature.split("\u0000") : []),
+    [blockedEdgeSignature],
   );
   const mapPositions = useMemo(() => [...nodeMap.values()], [nodeMap]);
   const invalidEntities = useMemo(() => [
-    ...(world?.zombies || []).map((item) => ["zombies", item.id, item.nodo]),
+    ...(world?.zombies || []).map((item) => ["zombies", item.id, item.nodo, item.nombreNodo]),
     ...(world?.sobrevivientes || []).map((item) => [
       "survivors",
       item.id,
       item.nodo,
+      item.nombreNodo,
     ]),
     ...(world?.refugios || []).map((item) => [
       "shelters",
       item.id,
       item.nodo ?? item.node,
+      item.nombreNodo,
     ]),
   ].filter(([, , node]) => node == null || !nodeMap.has(String(node))), [
     world?.zombies,
@@ -288,7 +302,10 @@ const MantaMap = memo(function MantaMap({
           streetMap.has(`${destination}|${origin}`);
         if (
           hasConnection &&
-          routeGeometry({ nodes: [origin, destination] }, nodeMap, streetMap)
+          routeGeometry({
+            nodes: [origin, destination],
+            streets: routeStreets[index] ? [routeStreets[index]] : [],
+          }, nodeMap, streetMap)
             .length < 2
         ) {
           missingSegments.push(
@@ -317,11 +334,8 @@ const MantaMap = memo(function MantaMap({
         : []),
     ];
   }), [world?.rutas, nodeMap, streetMap]);
-  const routesWithoutGeometry = useMemo(
-    () => (world?.rutas || []).filter(
-      (route) => routeGeometry(route, nodeMap, streetMap).length < 2,
-    ),
-    [world?.rutas, nodeMap, streetMap],
+  const routesWithoutGeometry = (world?.rutas || []).filter(
+    (_, index) => routePaths[index]?.length < 2,
   );
   const toggleLayer = (layer) =>
     setLayers((current) => ({ ...current, [layer]: !current[layer] }));
@@ -339,6 +353,7 @@ const MantaMap = memo(function MantaMap({
           {stale ? " · DESACTUALIZADOS" : ""}
         </small>
       </div>
+      <div className="map-notices" aria-live="polite">
       {(!hasStreetGeometry ||
         (layers.routes &&
           (world?.rutas?.length ?? 0) > 0 &&
@@ -351,17 +366,33 @@ const MantaMap = memo(function MantaMap({
         </div>
       )}
       {mode === "api" && layers.routes && (world?.rutas?.length ?? 0) === 0 && (
-        <div className="map-notice">El backend no publicó rutas seguras en este estado.</div>
+        <div className="map-notice">{world?.camposEstadoAusentes?.includes("rutas")
+          ? routeLookup?.status === "loading"
+            ? "Consultando la ruta del sobreviviente seleccionado…"
+            : routeLookup?.status === "unavailable"
+              ? "El backend no encontró una ruta segura para el sobreviviente seleccionado."
+              : routeLookup?.status === "error"
+                ? `No se pudo consultar la ruta: ${routeLookup.error}`
+                : "GET /estado no incluye una lista de rutas; se consulta GET /ruta para la persona seleccionada."
+          : "No hay rutas publicadas en este estado."}</div>
       )}
       {mode === "api" && layers.blocked && (world?.aristasBloqueadas?.length ?? 0) === 0 && (
-        <div className="map-notice">El backend no informa calles bloqueadas en este estado.</div>
+        <div className="map-notice">{world?.camposEstadoAusentes?.includes("aristasBloqueadas")
+          ? "GET /estado no incluyó el campo aristasBloqueadas."
+          : "No hay calles bloqueadas en este estado."}</div>
+      )}
+      {mode === "api" && world?.camposEstadoAusentes?.includes("refugios") && (
+        <div className="map-notice">GET /estado no incluyó el campo refugios.</div>
+      )}
+      {mode === "api" && world?.camposEstadoAusentes?.includes("sobrevivientes") && (
+        <div className="map-notice">GET /estado no incluyÃ³ sobrevivientes; se mostrarÃ¡n los zombis recibidos.</div>
       )}
       {invalidEntities.length > 0 && (
         <div className="map-notice map-notice--error">
           Entidades omitidas:{" "}
           {invalidEntities
-            .map(([kind, id]) =>
-              displayEntityName(
+            .map(([kind, id, , nodeName]) => {
+              const label = displayEntityName(
                 displayNames,
                 kind,
                 id,
@@ -370,10 +401,11 @@ const MantaMap = memo(function MantaMap({
                   : kind === "zombies"
                     ? "Zombie"
                     : "Refugio",
-              ),
-            )
+              );
+              return nodeName ? `${label} (${nodeName})` : label;
+            })
             .join("; ")}
-          . Su ubicación no está disponible en el mapa.
+          . No se mostraron porque su nodo no existe en el mapa recibido.
         </div>
       )}
       {roadMapWarnings.length > 0 && (
@@ -411,6 +443,7 @@ const MantaMap = memo(function MantaMap({
             . Verifica que sus tramos tengan geometría en el mapa.
           </div>
         )}
+      </div>
       <div className="map-controls" aria-label="Capas del mapa">
         {[
           ["streets", "Calles"],
@@ -453,9 +486,8 @@ const MantaMap = memo(function MantaMap({
         />
         <RecenterMap />
         <FitWorld positions={mapPositions} />
-        {(mapWorld?.calles || []).map((street, index) => {
-          const path = streetGeometry(street, nodeMap);
-          const blocked = isBlocked(world, street);
+        {streetPaths.map(({ street, path, index }) => {
+          const blocked = blockedEdges.has(edgeKey(street.origen, street.destino));
           if (blocked ? !layers.blocked : !layers.streets) return null;
           if (!path.length) return null;
           return (
@@ -504,8 +536,8 @@ const MantaMap = memo(function MantaMap({
           );
         })}
         {layers.routes &&
-          (world?.rutas || []).map((route) => {
-            const path = routeGeometry(route, nodeMap, streetMap);
+          (world?.rutas || []).map((route, index) => {
+            const path = routePaths[index];
             if (!path.length) return null;
             const recommended =
               route.recomendada === true ||
@@ -555,28 +587,15 @@ const MantaMap = memo(function MantaMap({
           })}
         {layers.zombies &&
           (world?.zombies || [])
-            .filter((zombie) => zombie.visible !== false)
+            .filter(shouldDisplayZombie)
             .map((zombie) => {
-              const position = nodeMap.get(zombie.nodo);
+              const position = nodeMap.get(String(zombie.nodo));
               if (!position) return null;
               const type = String(zombie.tipo || "").toLowerCase();
               const kind = markerKind(type);
-              const isHorde = type === "horda" || type === "horde";
+              const isDormant = type === "dormido" || type === "dormant";
               return (
                 <Fragment key={zombie.id}>
-                  {isHorde && (
-                    <Circle
-                      center={position}
-                      radius={260}
-                      pathOptions={{
-                        color: "#8B5CF6",
-                        fillColor: "#8B5CF6",
-                        fillOpacity: 0.12,
-                        weight: 1,
-                        dashArray: "5 8",
-                      }}
-                    />
-                  )}
                   <Marker
                     position={position}
                     icon={entityIcon(kind, labels[type] || zombie.tipo)}
@@ -603,10 +622,8 @@ const MantaMap = memo(function MantaMap({
                       Tipo: {labels[type] || zombie.tipo}
                       <br />
                       Ubicación:{" "}
-                      {intersectionDisplayName(
-                        mapWorld?.nodos?.find(
-                          (node) => node.id === zombie.nodo,
-                        ),
+                      {zombie.nombreNodo || intersectionDisplayName(
+                        nodesById.get(String(zombie.nodo)),
                         mapWorld?.calles || [],
                       )}
                       {zombie.cantidad ? (
@@ -617,7 +634,9 @@ const MantaMap = memo(function MantaMap({
                       ) : null}
                       <br />
                       Estado:{" "}
-                      {zombie.visible === false ? "oculto" : "detectado"}
+                      {zombie.visible === false
+                        ? isDormant ? "dormido, no detectado" : "oculto"
+                        : isDormant ? "dormido" : "detectado"}
                     </Popup>
                   </Marker>
                 </Fragment>
@@ -625,7 +644,7 @@ const MantaMap = memo(function MantaMap({
             })}
         {layers.survivors &&
           (world?.sobrevivientes || []).map((survivor) => {
-            const position = nodeMap.get(survivor.nodo);
+            const position = nodeMap.get(String(survivor.nodo));
             if (!position) return null;
             return (
               <Marker
@@ -656,7 +675,7 @@ const MantaMap = memo(function MantaMap({
                   <br />
                   Ubicación:{" "}
                   {intersectionDisplayName(
-                    mapWorld?.nodos?.find((node) => node.id === survivor.nodo),
+                    nodesById.get(String(survivor.nodo)),
                     mapWorld?.calles || [],
                   )}
                   <br />
@@ -676,7 +695,7 @@ const MantaMap = memo(function MantaMap({
         {layers.shelters &&
           (world?.refugios || []).map((shelter) => {
             const shelterNode = shelter.nodo ?? shelter.node;
-            const position = nodeMap.get(shelterNode);
+            const position = nodeMap.get(String(shelterNode));
             return position ? (
               <Marker
                 position={position}
@@ -705,7 +724,7 @@ const MantaMap = memo(function MantaMap({
                   <br />
                   Ubicación:{" "}
                   {intersectionDisplayName(
-                    mapWorld?.nodos?.find((node) => node.id === shelterNode),
+                    nodesById.get(String(shelterNode)),
                     mapWorld?.calles || [],
                   )}
                   <br />

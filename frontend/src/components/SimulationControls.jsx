@@ -9,6 +9,9 @@ export default function SimulationControls({
   onRefresh,
   onLoadScenario,
   scenarioLoading = false,
+  onAdvanceTurn,
+  turnLoading = false,
+  connection = "connecting",
 }) {
   const [scenario, setScenario] = useState("ronda1");
 
@@ -24,7 +27,7 @@ export default function SimulationControls({
       <div className="control-strip__help">
         {mode === "demo"
           ? "Los movimientos son ficticios y se actualizan cada 2 s."
-          : "El estado se actualiza periódicamente. Las acciones solo se envían al pulsarlas."}
+          : "El estado se actualiza periódicamente. El servidor avanza automáticamente; este control solicita un turno manual."}
       </div>
       <div className="control-strip__buttons">
         {mode === "demo" ? (
@@ -35,15 +38,18 @@ export default function SimulationControls({
         ) : (
           <>
             <label htmlFor="api-scenario">Ronda</label>
-            <select id="api-scenario" className="button" value={scenario} onChange={(event) => setScenario(event.target.value)} disabled={scenarioLoading}>
+            <select id="api-scenario" className="button" value={scenario} onChange={(event) => setScenario(event.target.value)} disabled={scenarioLoading || turnLoading}>
               <option value="ronda1">Ronda 1 · 20 sobrevivientes</option>
               <option value="ronda2">Ronda 2 · 80 sobrevivientes</option>
               <option value="ronda3">Ronda 3 · 200 sobrevivientes</option>
             </select>
-            <button className="button button--primary" type="button" onClick={() => onLoadScenario?.(scenario)} disabled={scenarioLoading}>
+            <button className="button button--primary" type="button" onClick={() => onLoadScenario?.(scenario)} disabled={scenarioLoading || turnLoading || connection !== "connected"}>
               {scenarioLoading ? "Cargando ronda…" : "Iniciar ronda"}
             </button>
-            <button className="button button--secondary" type="button" onClick={onRefresh}>Actualizar</button>
+            <button className="button button--secondary" type="button" onClick={onAdvanceTurn} disabled={turnLoading || scenarioLoading || connection !== "connected"}>
+              {turnLoading ? "Avanzando…" : "Avanzar un turno"}
+            </button>
+            <button className="button button--secondary" type="button" onClick={onRefresh} disabled={turnLoading || scenarioLoading}>Actualizar</button>
           </>
         )}
       </div>

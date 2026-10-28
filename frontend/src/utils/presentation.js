@@ -70,6 +70,12 @@ export function displayEntityName(names, kind, id, fallback) {
   return names[kind]?.get(String(id)) || fallback;
 }
 
+export function shouldDisplayZombie(zombie = {}) {
+  const type = String(zombie.tipo ?? zombie.type ?? "").toLowerCase();
+  const dormant = type === "dormido" || type === "dormant";
+  return zombie.visible !== false || dormant;
+}
+
 export function eventDisplayDescription(event, world = {}, names = createDisplayNames(world)) {
   let description = String(event?.descripcion ?? "Evento del simulador");
   const edge = event?.arista;

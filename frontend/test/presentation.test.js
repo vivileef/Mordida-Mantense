@@ -5,6 +5,7 @@ import {
   displayEntityName,
   eventDisplayDescription,
   intersectionDisplayName,
+  shouldDisplayZombie,
   streetDisplayName,
 } from "../src/utils/presentation.js";
 
@@ -67,4 +68,11 @@ test("creates labels for the 200-agent target without ID-derived labels", () => 
   assert.equal(names.survivors.size, 200);
   assert.equal(displayEntityName(names, "survivors", "S-200", "Sobreviviente"), "Sobreviviente 200");
   assert.equal(displayEntityName(names, "zombies", "Z-44", "Zombie"), "Caminante 44");
+});
+
+test("keeps dormant zombie markers visible while respecting visibility for other types", () => {
+  assert.equal(shouldDisplayZombie({ tipo: "dormido", visible: false }), true);
+  assert.equal(shouldDisplayZombie({ type: "dormant", visible: false }), true);
+  assert.equal(shouldDisplayZombie({ tipo: "caminante", visible: false }), false);
+  assert.equal(shouldDisplayZombie({ tipo: "horda", visible: true }), true);
 });

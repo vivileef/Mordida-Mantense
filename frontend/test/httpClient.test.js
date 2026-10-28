@@ -31,6 +31,14 @@ test("returns an HTTP status and server error detail", async () => {
   await assert.rejects(request("/mover-sobreviviente"), /HTTP 409: Movimiento inválido/);
 });
 
+test("keeps the HTTP status code available for endpoint-specific handling", async () => {
+  const request = createHttpClient({
+    baseUrl: "/api",
+    fetchImpl: async () => ({ ok: false, status: 404, json: async () => ({ error: "Not found" }) }),
+  });
+  await assert.rejects(request("/ruta/S-1"), (error) => error.status === 404);
+});
+
 test("reports connection failures without hiding the cause", async () => {
   const request = createHttpClient({
     baseUrl: "/api",

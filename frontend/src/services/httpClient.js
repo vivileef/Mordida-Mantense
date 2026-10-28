@@ -43,7 +43,9 @@ export function createHttpClient({
           // El servidor puede responder con un cuerpo no JSON.
         }
         if (timedOut) throw timeoutError();
-        throw new Error(`HTTP ${response.status}${detail ? `: ${detail}` : ""}`);
+        const httpError = new Error(`HTTP ${response.status}${detail ? `: ${detail}` : ""}`);
+        httpError.status = response.status;
+        throw httpError;
       }
 
       try {
