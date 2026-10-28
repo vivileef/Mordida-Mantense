@@ -647,7 +647,8 @@ export default function App() {
       setDispatchFeedback("Vehículo despachado; se actualizará el estado del rescate.");
       await refresh();
     } catch (dispatchError) {
-      setDispatchFeedback(dispatchError.message || "No se pudo despachar el vehículo.");
+      console.error("No se pudo completar el despacho del vehículo.", dispatchError);
+      setDispatchFeedback("No se pudo completar el despacho.");
     } finally {
       setDispatchLoading(false);
     }

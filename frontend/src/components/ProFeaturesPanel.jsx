@@ -154,7 +154,7 @@ export default function ProFeaturesPanel({ world, mode = "demo", onDispatch, dis
       </div>
 
       <div className="pro-grid">
-        <article className="pro-card" aria-label="Corredores anticipados">
+        <article className="pro-card pro-card--prediction" aria-label="Corredores anticipados">
           <div className="pro-card__topline">
             <span className="pro-card__symbol pro-card__symbol--prediction">
               PRONÓSTICO
@@ -220,7 +220,7 @@ export default function ProFeaturesPanel({ world, mode = "demo", onDispatch, dis
           )}
         </article>
 
-        <article className="pro-card" aria-label="Capacidad de refugios">
+        <article className="pro-card pro-card--refuge" aria-label="Capacidad de refugios">
           <div className="pro-card__topline">
             <span className="pro-card__symbol pro-card__symbol--refuge">
               REFUGIOS
@@ -257,7 +257,7 @@ export default function ProFeaturesPanel({ world, mode = "demo", onDispatch, dis
           )}
         </article>
 
-        <article className="pro-card" aria-label="Flota de rescate">
+        <article className="pro-card pro-card--rescue" aria-label="Flota de rescate">
           <div className="pro-card__topline">
             <span className="pro-card__symbol pro-card__symbol--rescue">
               FLOTA
@@ -313,7 +313,7 @@ export default function ProFeaturesPanel({ world, mode = "demo", onDispatch, dis
                   <label>Vehículo<select name="vehicle">{vehicles.filter((vehicle) => ["disponible", "available", "ready"].includes(String(valueOf(vehicle, "fase", "estado", "status")).toLowerCase())).map((vehicle, index) => <option key={String(vehicle.id ?? vehicle.vehiculoId ?? index)} value={String(vehicle.id ?? vehicle.vehiculoId)}>{readableName(valueOf(vehicle, "nombre", "name"), `Vehículo ${index + 1}`)}</option>)}</select></label>
                   <label>Persona<select name="survivor">{(world?.sobrevivientes ?? []).filter((survivor) => survivor.activo && !survivor.abordo).map((survivor, index) => <option key={String(survivor.id)} value={String(survivor.id)}>{displayEntityName(displayNames, "survivors", survivor.id, `Persona ${index + 1}`)}</option>)}</select></label>
                   <button type="submit" disabled={dispatchLoading || !onDispatch}>{dispatchLoading ? "Despachando…" : "Despachar"}</button>
-                  {dispatchFeedback && <span role="status">{dispatchFeedback}</span>}
+                  {dispatchFeedback && <span role={dispatchFeedback === "No se pudo completar el despacho." ? "alert" : "status"}>{dispatchFeedback}</span>}
                 </form>
               )}
             </>
