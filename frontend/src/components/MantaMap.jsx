@@ -168,6 +168,25 @@ function directionsForStreet(street, path, streetMap, nodeMap) {
   return reverse ? [street, reverse] : [street];
 }
 
+function blockedDirectionsForPath(street, path, streetMap, nodeMap, blockedEdges) {
+  const blocked = [];
+  const candidates = streetMap.get(`${street.origen}|${street.destino}`) ?? [street];
+  for (const candidate of candidates) {
+    if (blockedEdges.has(directedEdgeKey(candidate.origen, candidate.destino)) &&
+        samePath(streetGeometry(candidate, nodeMap), path)) {
+      blocked.push(candidate);
+    }
+  }
+  const reverse = streetMap.get(`${street.destino}|${street.origen}`) ?? [];
+  for (const candidate of reverse) {
+    if (blockedEdges.has(directedEdgeKey(candidate.origen, candidate.destino)) &&
+        samePath(streetGeometry(candidate, nodeMap), [...path].reverse())) {
+      blocked.push(candidate);
+    }
+  }
+  return blocked;
+}
+
 function AnimatedMarker({ position, duration = 2000, ...markerProps }) {
   const [displayPosition, setDisplayPosition] = useState(position);
   const currentPosition = useRef(position);
@@ -303,8 +322,8 @@ const MantaMap = memo(function MantaMap({
   );
   const renderedStreetPaths = useMemo(() => streetPaths.map((item) => {
     const directions = directionsForStreet(item.street, item.path, streetMap, nodeMap);
-    const blockedDirections = directions.filter((street) =>
-      blockedEdges.has(directedEdgeKey(street.origen, street.destino)),
+    const blockedDirections = blockedDirectionsForPath(
+      item.street, item.path, streetMap, nodeMap, blockedEdges,
     );
     return {
       ...item,
@@ -689,8 +708,9 @@ const MantaMap = memo(function MantaMap({
         {renderedStreetPaths.map((item) => {
           const { street, path, index, directions, blockedDirections, selectionKey } = item;
           const selected = selectedStreetKey === selectionKey;
-          const blocked = blockedDirections.length === directions.length;
-          const partiallyBlocked = blockedDirections.length > 0 && !blocked;
+          const blocked = blockedDirections.length > 0;
+          const partiallyBlocked = blockedDirections.length > 0 &&
+            blockedDirections.length < directions.length;
           const showOpen = layers.streets;
           const showBlocked = blockedDirections.length > 0 && layers.blocked;
           if (!showOpen && !showBlocked) return null;
