@@ -1,24 +1,73 @@
 :root {
   font-family: "Segoe UI", Inter, ui-sans-serif, system-ui, sans-serif;
-  --night: #0B0A1F;
-  --panel: #120E2E;
-  --panel-border: #3B2A6B;
-  --pumpkin: #FF9F1C;
-  --electric-violet: #8B5CF6;
-  --title-glow: #7B2CBF;
-  --success: #22E58B;
-  --moon-yellow: #F5C542;
-  --text: #FFFFFF;
-  --text-secondary: #D9D6F0;
+  --night: #0b0a1f;
+  --panel: #120e2e;
+  --panel-border: #3b2a6b;
+  --pumpkin: #ff9f1c;
+  --electric-violet: #8b5cf6;
+  --title-glow: #7b2cbf;
+  --success: #22e58b;
+  --moon-yellow: #f5c542;
+  --text: #ffffff;
+  --text-secondary: #d9d6f0;
   --muted: #aaa4c8;
   color: var(--text);
   background: var(--night);
   font-synthesis: none;
 }
-* { box-sizing: border-box; }
-body { margin: 0; min-width: 320px; background: var(--night); }
-button { font: inherit; cursor: pointer; }
-.button:focus-visible, button:focus-visible { outline: 2px solid var(--pumpkin); outline-offset: 2px; }
-.loading-screen { min-height: 100vh; display: grid; place-content: center; justify-items: center; color: var(--text-secondary); background: var(--night); }
-.loading-screen h1 { color: var(--text); font-size: 1.5rem; text-shadow: 0 0 16px var(--title-glow); }
-.loading-screen .brand__mark { margin-bottom: 12px; }
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  min-width: 320px;
+  background: var(--night);
+}
+button {
+  font: inherit;
+  cursor: pointer;
+}
+.button:focus-visible,
+button:focus-visible {
+  outline: 2px solid var(--pumpkin);
+  outline-offset: 2px;
+}
+.loading-screen {
+  min-height: 100vh;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  color: var(--text-secondary);
+  background: var(--night);
+}
+.loading-screen h1 {
+  color: var(--text);
+  font-size: 1.5rem;
+  text-shadow: 0 0 16px var(--title-glow);
+}
+.loading-screen .brand__mark {
+  margin-bottom: 12px;
+}
+
+.leaflet-marker-icon.survivor-character-wrapper,
+.survivor-character-wrapper,
+.survivor-character-wrapper .survivor-character {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+.survivor-character-wrapper::before,
+.survivor-character-wrapper::after,
+.survivor-character::before,
+.survivor-character::after {
+  content: none !important;
+  display: none !important;
+}
+
+.survivor-character-wrapper .survivor-character svg {
+  display: block;
+  width: 48px;
+  height: 64px;
+  background: transparent !important;
+}

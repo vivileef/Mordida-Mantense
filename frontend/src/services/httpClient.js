@@ -43,7 +43,10 @@ export function createHttpClient({
           // El servidor puede responder con un cuerpo no JSON.
         }
         if (timedOut) throw timeoutError();
-        const httpError = new Error(`HTTP ${response.status}${detail ? `: ${detail}` : ""}`);
+        const statusMessage = response.status === 401
+          ? "Autenticación requerida (HTTP 401)"
+          : `HTTP ${response.status}`;
+        const httpError = new Error(`${statusMessage}${detail ? `: ${detail}` : ""}`);
         httpError.status = response.status;
         throw httpError;
       }

@@ -76,6 +76,48 @@ function entityIcon(kind, label) {
     popupAnchor: [0, -18],
   });
 }
+
+function survivorIcon(label = "Sobreviviente") {
+  return divIcon({
+    className: "",
+    html: `
+      <div style="
+        width:48px;
+        height:64px;
+        background:transparent;
+        border:none;
+        box-shadow:none;
+        overflow:visible;
+      ">
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          width="48"
+          height="64"
+          viewBox="0 0 48 64"
+          role="img"
+          aria-label="${label}"
+          style="display:block;background:transparent"
+        >
+          <ellipse cx="24" cy="60" rx="13" ry="3" fill="#000" opacity=".25"/>
+          <circle cx="24" cy="12" r="8" fill="#F2C6A0" stroke="#25213D" stroke-width="2"/>
+          <path d="M16 11 Q15 2 24 3 Q33 3 32 12 L29 8 L20 8 Z" fill="#34264F"/>
+          <path d="M17 23 L31 23 L35 42 L29 43 L28 33 L28 48 L20 48 L20 33 L19 43 L13 42 Z"
+            fill="#22E58B" stroke="#25213D" stroke-width="2" stroke-linejoin="round"/>
+          <path d="M17 25 L10 38 L14 41 L22 30 M31 25 L38 36 L34 40 L27 30"
+            fill="none" stroke="#F2C6A0" stroke-width="5" stroke-linecap="round"/>
+          <path d="M20 47 L19 57 L14 58 M28 47 L30 56 L35 58"
+            fill="none" stroke="#29233D" stroke-width="6" stroke-linecap="round"/>
+          <path d="M10 59 L17 59 M31 59 L38 59"
+            stroke="#FF9F1C" stroke-width="5" stroke-linecap="round"/>
+        </svg>
+      </div>
+    `,
+    iconSize: [48, 64],
+    iconAnchor: [24, 60],
+    popupAnchor: [0, -56],
+  });
+}
+
 function RecenterMap() {
   const map = useMap();
   return (
@@ -199,24 +241,25 @@ const MantaMap = memo(function MantaMap({
       ? { ...world, nodos: resolvedApiMap.nodos, calles: resolvedApiMap.calles }
       : world;
   const roadMapWarnings = resolvedApiMap?.warnings ?? [];
-  const displayNames = useMemo(() => createDisplayNames(world), [
-    world?.zombies,
-    world?.sobrevivientes,
-    world?.refugios,
-  ]);
+  const displayNames = useMemo(
+    () => createDisplayNames(world),
+    [world?.zombies, world?.sobrevivientes, world?.refugios],
+  );
   const nodeMap = useMemo(() => coordinates(mapWorld), [mapWorld?.nodos]);
   const nodesById = useMemo(
-    () => new Map((mapWorld?.nodos || []).map((node) => [String(node.id), node])),
+    () =>
+      new Map((mapWorld?.nodos || []).map((node) => [String(node.id), node])),
     [mapWorld?.nodos],
   );
   const streetMap = useMemo(
-    () => (mapWorld?.calles || []).reduce((groups, street) => {
-      const key = `${street.origen}|${street.destino}`;
-      const group = groups.get(key) ?? [];
-      group.push(street);
-      groups.set(key, group);
-      return groups;
-    }, new Map()),
+    () =>
+      (mapWorld?.calles || []).reduce((groups, street) => {
+        const key = `${street.origen}|${street.destino}`;
+        const group = groups.get(key) ?? [];
+        group.push(street);
+        groups.set(key, group);
+        return groups;
+      }, new Map()),
     [mapWorld?.calles],
   );
   const streetPaths = useMemo(
@@ -225,7 +268,10 @@ const MantaMap = memo(function MantaMap({
   );
   const hasStreetGeometry = streetPaths.length > 0;
   const routePaths = useMemo(
-    () => (world?.rutas || []).map((route) => routeGeometry(route, nodeMap, streetMap)),
+    () =>
+      (world?.rutas || []).map((route) =>
+        routeGeometry(route, nodeMap, streetMap),
+      ),
     [world?.rutas, nodeMap, streetMap],
   );
   const hasRouteGeometry = routePaths.some((path) => path.length > 1);
@@ -235,105 +281,117 @@ const MantaMap = memo(function MantaMap({
     .sort()
     .join("\u0000");
   const blockedEdges = useMemo(
-    () => new Set(blockedEdgeSignature ? blockedEdgeSignature.split("\u0000") : []),
+    () =>
+      new Set(blockedEdgeSignature ? blockedEdgeSignature.split("\u0000") : []),
     [blockedEdgeSignature],
   );
   const mapPositions = useMemo(() => [...nodeMap.values()], [nodeMap]);
-  const invalidEntities = useMemo(() => [
-    ...(world?.zombies || []).map((item) => ["zombies", item.id, item.nodo, item.nombreNodo]),
-    ...(world?.sobrevivientes || []).map((item) => [
-      "survivors",
-      item.id,
-      item.nodo,
-      item.nombreNodo,
-    ]),
-    ...(world?.refugios || []).map((item) => [
-      "shelters",
-      item.id,
-      item.nodo ?? item.node,
-      item.nombreNodo,
-    ]),
-  ].filter(([, , node]) => node == null || !nodeMap.has(String(node))), [
-    world?.zombies,
-    world?.sobrevivientes,
-    world?.refugios,
-    nodeMap,
-  ]);
-  const routeDiagnostics = useMemo(() => (world?.rutas || []).flatMap((route) => {
-    const routeId =
-      route.survivorId ?? route.sobrevivienteId ?? "Ruta sin identificador";
-    const routeNodes = Array.isArray(route.nodes ?? route.nodos)
-      ? (route.nodes ?? route.nodos)
-      : [];
-    const routeStreets = Array.isArray(route.streets ?? route.calles)
-      ? (route.streets ?? route.calles)
-      : [];
-    const streetNodeIds = routeStreets.flatMap((street) => [
-      street.origen ?? street.origin ?? street.from,
-      street.destino ?? street.destination ?? street.to,
-    ]);
-    const referencedNodes = [...routeNodes, ...streetNodeIds]
-      .filter((node) => node != null)
-      .map(String);
-    const missingNodes = [
-      ...new Set(referencedNodes.filter((node) => !nodeMap.has(node))),
-    ];
-    const missingSegments = [];
+  const invalidEntities = useMemo(
+    () =>
+      [
+        ...(world?.zombies || []).map((item) => [
+          "zombies",
+          item.id,
+          item.nodo,
+          item.nombreNodo,
+        ]),
+        ...(world?.sobrevivientes || []).map((item) => [
+          "survivors",
+          item.id,
+          item.nodo,
+          item.nombreNodo,
+        ]),
+        ...(world?.refugios || []).map((item) => [
+          "shelters",
+          item.id,
+          item.nodo ?? item.node,
+          item.nombreNodo,
+        ]),
+      ].filter(([, , node]) => node == null || !nodeMap.has(String(node))),
+    [world?.zombies, world?.sobrevivientes, world?.refugios, nodeMap],
+  );
+  const routeDiagnostics = useMemo(
+    () =>
+      (world?.rutas || []).flatMap((route) => {
+        const routeId =
+          route.survivorId ?? route.sobrevivienteId ?? "Ruta sin identificador";
+        const routeNodes = Array.isArray(route.nodes ?? route.nodos)
+          ? (route.nodes ?? route.nodos)
+          : [];
+        const routeStreets = Array.isArray(route.streets ?? route.calles)
+          ? (route.streets ?? route.calles)
+          : [];
+        const streetNodeIds = routeStreets.flatMap((street) => [
+          street.origen ?? street.origin ?? street.from,
+          street.destino ?? street.destination ?? street.to,
+        ]);
+        const referencedNodes = [...routeNodes, ...streetNodeIds]
+          .filter((node) => node != null)
+          .map(String);
+        const missingNodes = [
+          ...new Set(referencedNodes.filter((node) => !nodeMap.has(node))),
+        ];
+        const missingSegments = [];
 
-    if (missingNodes.length === 0 && routeNodes.length > 1) {
-      for (let index = 0; index < routeNodes.length - 1; index += 1) {
-        const origin = String(routeNodes[index]);
-        const destination = String(routeNodes[index + 1]);
-        if (
-          !streetMap.has(`${origin}|${destination}`) &&
-          !streetMap.has(`${destination}|${origin}`)
-        ) {
-          missingSegments.push(`${origin} → ${destination}`);
+        if (missingNodes.length === 0 && routeNodes.length > 1) {
+          for (let index = 0; index < routeNodes.length - 1; index += 1) {
+            const origin = String(routeNodes[index]);
+            const destination = String(routeNodes[index + 1]);
+            if (
+              !streetMap.has(`${origin}|${destination}`) &&
+              !streetMap.has(`${destination}|${origin}`)
+            ) {
+              missingSegments.push(`${origin} → ${destination}`);
+            }
+          }
         }
-      }
-    }
 
-    if (missingNodes.length === 0 && routeNodes.length > 1) {
-      for (let index = 0; index < routeNodes.length - 1; index += 1) {
-        const origin = String(routeNodes[index]);
-        const destination = String(routeNodes[index + 1]);
-        const hasConnection =
-          streetMap.has(`${origin}|${destination}`) ||
-          streetMap.has(`${destination}|${origin}`);
-        if (
-          hasConnection &&
-          routeGeometry({
-            nodes: [origin, destination],
-            streets: routeStreets[index] ? [routeStreets[index]] : [],
-          }, nodeMap, streetMap)
-            .length < 2
-        ) {
-          missingSegments.push(
-            `${origin} a ${destination} (sin geometría vial)`,
-          );
+        if (missingNodes.length === 0 && routeNodes.length > 1) {
+          for (let index = 0; index < routeNodes.length - 1; index += 1) {
+            const origin = String(routeNodes[index]);
+            const destination = String(routeNodes[index + 1]);
+            const hasConnection =
+              streetMap.has(`${origin}|${destination}`) ||
+              streetMap.has(`${destination}|${origin}`);
+            if (
+              hasConnection &&
+              routeGeometry(
+                {
+                  nodes: [origin, destination],
+                  streets: routeStreets[index] ? [routeStreets[index]] : [],
+                },
+                nodeMap,
+                streetMap,
+              ).length < 2
+            ) {
+              missingSegments.push(
+                `${origin} a ${destination} (sin geometría vial)`,
+              );
+            }
+          }
         }
-      }
-    }
 
-    return [
-      ...(missingNodes.length
-        ? [
-            {
-              routeId,
-              message: `${missingNodes.length} intersección(es) no están en el mapa`,
-            },
-          ]
-        : []),
-      ...(missingSegments.length
-        ? [
-            {
-              routeId,
-              message: `${missingSegments.length} tramo(s) no tienen una calle compatible`,
-            },
-          ]
-        : []),
-    ];
-  }), [world?.rutas, nodeMap, streetMap]);
+        return [
+          ...(missingNodes.length
+            ? [
+                {
+                  routeId,
+                  message: `${missingNodes.length} intersección(es) no están en el mapa`,
+                },
+              ]
+            : []),
+          ...(missingSegments.length
+            ? [
+                {
+                  routeId,
+                  message: `${missingSegments.length} tramo(s) no tienen una calle compatible`,
+                },
+              ]
+            : []),
+        ];
+      }),
+    [world?.rutas, nodeMap, streetMap],
+  );
   const routesWithoutGeometry = (world?.rutas || []).filter(
     (_, index) => routePaths[index]?.length < 2,
   );
@@ -354,95 +412,111 @@ const MantaMap = memo(function MantaMap({
         </small>
       </div>
       <div className="map-notices" aria-live="polite">
-      {(!hasStreetGeometry ||
-        (layers.routes &&
-          (world?.rutas?.length ?? 0) > 0 &&
-          !hasRouteGeometry &&
-          routeDiagnostics.length === 0)) && (
-        <div className="map-notice">
-          {!hasStreetGeometry
-            ? "No hay calles georreferenciadas válidas en los datos recibidos."
-            : "No se pudieron trazar una o más rutas con las calles recibidas."}
-        </div>
-      )}
-      {mode === "api" && layers.routes && (world?.rutas?.length ?? 0) === 0 && (
-        <div className="map-notice">{world?.camposEstadoAusentes?.includes("rutas")
-          ? routeLookup?.status === "loading"
-            ? "Consultando la ruta del sobreviviente seleccionado…"
-            : routeLookup?.status === "unavailable"
-              ? "El backend no encontró una ruta segura para el sobreviviente seleccionado."
-              : routeLookup?.status === "error"
-                ? `No se pudo consultar la ruta: ${routeLookup.error}`
-                : "GET /estado no incluye una lista de rutas; se consulta GET /ruta para la persona seleccionada."
-          : "No hay rutas publicadas en este estado."}</div>
-      )}
-      {mode === "api" && layers.blocked && (world?.aristasBloqueadas?.length ?? 0) === 0 && (
-        <div className="map-notice">{world?.camposEstadoAusentes?.includes("aristasBloqueadas")
-          ? "GET /estado no incluyó el campo aristasBloqueadas."
-          : "No hay calles bloqueadas en este estado."}</div>
-      )}
-      {mode === "api" && world?.camposEstadoAusentes?.includes("refugios") && (
-        <div className="map-notice">GET /estado no incluyó el campo refugios.</div>
-      )}
-      {mode === "api" && world?.camposEstadoAusentes?.includes("sobrevivientes") && (
-        <div className="map-notice">GET /estado no incluyÃ³ sobrevivientes; se mostrarÃ¡n los zombis recibidos.</div>
-      )}
-      {invalidEntities.length > 0 && (
-        <div className="map-notice map-notice--error">
-          Entidades omitidas:{" "}
-          {invalidEntities
-            .map(([kind, id, , nodeName]) => {
-              const label = displayEntityName(
-                displayNames,
-                kind,
-                id,
-                kind === "survivors"
-                  ? "Sobreviviente"
-                  : kind === "zombies"
-                    ? "Zombie"
-                    : "Refugio",
-              );
-              return nodeName ? `${label} (${nodeName})` : label;
-            })
-            .join("; ")}
-          . No se mostraron porque su nodo no existe en el mapa recibido.
-        </div>
-      )}
-      {roadMapWarnings.length > 0 && (
-        <div className="map-notice map-notice--error">
-          Compatibilidad de la red API: {roadMapWarnings.join(" ")}
-        </div>
-      )}
-      {routeDiagnostics.length > 0 && (
-        <div className="map-notice map-notice--error">
-          Rutas incompletas:{" "}
-          {routeDiagnostics
-            .map(
-              ({ routeId, message }) =>
-                `${displayEntityName(displayNames, "survivors", routeId, "Sobreviviente")}: ${message}`,
-            )
-            .join("; ")}
-          .
-        </div>
-      )}
-      {layers.routes &&
-        routesWithoutGeometry.length > 0 &&
-        routeDiagnostics.length === 0 && (
-          <div className="map-notice map-notice--error">
-            No hay trazado vial para{" "}
-            {routesWithoutGeometry
-              .map((route) =>
-                displayEntityName(
-                  displayNames,
-                  "survivors",
-                  route.survivorId ?? route.sobrevivienteId,
-                  "un sobreviviente",
-                ),
-              )
-              .join(", ")}
-            . Verifica que sus tramos tengan geometría en el mapa.
+        {(!hasStreetGeometry ||
+          (layers.routes &&
+            (world?.rutas?.length ?? 0) > 0 &&
+            !hasRouteGeometry &&
+            routeDiagnostics.length === 0)) && (
+          <div className="map-notice">
+            {!hasStreetGeometry
+              ? "No hay calles georreferenciadas válidas en los datos recibidos."
+              : "No se pudieron trazar una o más rutas con las calles recibidas."}
           </div>
         )}
+        {mode === "api" &&
+          layers.routes &&
+          (world?.rutas?.length ?? 0) === 0 && (
+            <div className="map-notice">
+              {world?.camposEstadoAusentes?.includes("rutas")
+                ? routeLookup?.status === "loading"
+                  ? "Consultando la ruta del sobreviviente seleccionado…"
+                  : routeLookup?.status === "unavailable"
+                    ? "El backend no encontró una ruta segura para el sobreviviente seleccionado."
+                    : routeLookup?.status === "error"
+                      ? `No se pudo consultar la ruta: ${routeLookup.error}`
+                      : "GET /estado no incluye una lista de rutas; se consulta GET /ruta para la persona seleccionada."
+                : "No hay rutas publicadas en este estado."}
+            </div>
+          )}
+        {mode === "api" &&
+          layers.blocked &&
+          (world?.aristasBloqueadas?.length ?? 0) === 0 && (
+            <div className="map-notice">
+              {world?.camposEstadoAusentes?.includes("aristasBloqueadas")
+                ? "GET /estado no incluyó el campo aristasBloqueadas."
+                : "No hay calles bloqueadas en este estado."}
+            </div>
+          )}
+        {mode === "api" &&
+          world?.camposEstadoAusentes?.includes("refugios") && (
+            <div className="map-notice">
+              GET /estado no incluye el campo refugios.
+            </div>
+          )}
+        {mode === "api" &&
+          world?.camposEstadoAusentes?.includes("sobrevivientes") && (
+            <div className="map-notice">
+              GET /estado no incluye sobrevivientes; se mostrarán los zombis
+              recibidos.
+            </div>
+          )}
+        {invalidEntities.length > 0 && (
+          <div className="map-notice map-notice--error">
+            Entidades omitidas:{" "}
+            {invalidEntities
+              .map(([kind, id, , nodeName]) => {
+                const label = displayEntityName(
+                  displayNames,
+                  kind,
+                  id,
+                  kind === "survivors"
+                    ? "Sobreviviente"
+                    : kind === "zombies"
+                      ? "Zombie"
+                      : "Refugio",
+                );
+                return nodeName ? `${label} (${nodeName})` : label;
+              })
+              .join("; ")}
+            . No se mostraron: el nodo indicado no existe o no está en el mapa
+            recibido.
+          </div>
+        )}
+        {roadMapWarnings.length > 0 && (
+          <div className="map-notice map-notice--error">
+            Compatibilidad de la red API: {roadMapWarnings.join(" ")}
+          </div>
+        )}
+        {routeDiagnostics.length > 0 && (
+          <div className="map-notice map-notice--error">
+            Rutas incompletas:{" "}
+            {routeDiagnostics
+              .map(
+                ({ routeId, message }) =>
+                  `${displayEntityName(displayNames, "survivors", routeId, "Sobreviviente")}: ${message}`,
+              )
+              .join("; ")}
+            .
+          </div>
+        )}
+        {layers.routes &&
+          routesWithoutGeometry.length > 0 &&
+          routeDiagnostics.length === 0 && (
+            <div className="map-notice map-notice--error">
+              No hay trazado vial para{" "}
+              {routesWithoutGeometry
+                .map((route) =>
+                  displayEntityName(
+                    displayNames,
+                    "survivors",
+                    route.survivorId ?? route.sobrevivienteId,
+                    "un sobreviviente",
+                  ),
+                )
+                .join(", ")}
+              . Verifica que sus tramos tengan geometría en el mapa.
+            </div>
+          )}
       </div>
       <div className="map-controls" aria-label="Capas del mapa">
         {[
@@ -487,7 +561,9 @@ const MantaMap = memo(function MantaMap({
         <RecenterMap />
         <FitWorld positions={mapPositions} />
         {streetPaths.map(({ street, path, index }) => {
-          const blocked = blockedEdges.has(edgeKey(street.origen, street.destino));
+          const blocked = blockedEdges.has(
+            edgeKey(street.origen, street.destino),
+          );
           if (blocked ? !layers.blocked : !layers.streets) return null;
           if (!path.length) return null;
           return (
@@ -586,62 +662,65 @@ const MantaMap = memo(function MantaMap({
             );
           })}
         {layers.zombies &&
-          (world?.zombies || [])
-            .filter(shouldDisplayZombie)
-            .map((zombie) => {
-              const position = nodeMap.get(String(zombie.nodo));
-              if (!position) return null;
-              const type = String(zombie.tipo || "").toLowerCase();
-              const kind = markerKind(type);
-              const isDormant = type === "dormido" || type === "dormant";
-              return (
-                <Fragment key={zombie.id}>
-                  <Marker
-                    position={position}
-                    icon={entityIcon(kind, labels[type] || zombie.tipo)}
-                  >
-                    <Tooltip>
+          (world?.zombies || []).filter(shouldDisplayZombie).map((zombie) => {
+            const position = nodeMap.get(String(zombie.nodo));
+            if (!position) return null;
+            const type = String(zombie.tipo || "").toLowerCase();
+            const kind = markerKind(type);
+            const isDormant = type === "dormido" || type === "dormant";
+            return (
+              <Fragment key={zombie.id}>
+                <Marker
+                  position={position}
+                  icon={entityIcon(kind, labels[type] || zombie.tipo)}
+                >
+                  <Tooltip>
+                    {displayEntityName(
+                      displayNames,
+                      "zombies",
+                      zombie.id,
+                      "Zombie",
+                    )}
+                    : {labels[type] || zombie.tipo}
+                  </Tooltip>
+                  <Popup>
+                    <b>
                       {displayEntityName(
                         displayNames,
                         "zombies",
                         zombie.id,
                         "Zombie",
                       )}
-                      : {labels[type] || zombie.tipo}
-                    </Tooltip>
-                    <Popup>
-                      <b>
-                        {displayEntityName(
-                          displayNames,
-                          "zombies",
-                          zombie.id,
-                          "Zombie",
-                        )}
-                      </b>
-                      <br />
-                      Tipo: {labels[type] || zombie.tipo}
-                      <br />
-                      Ubicación:{" "}
-                      {zombie.nombreNodo || intersectionDisplayName(
+                    </b>
+                    <br />
+                    Tipo: {labels[type] || zombie.tipo}
+                    <br />
+                    Ubicación:{" "}
+                    {zombie.nombreNodo ||
+                      intersectionDisplayName(
                         nodesById.get(String(zombie.nodo)),
                         mapWorld?.calles || [],
                       )}
-                      {zombie.cantidad ? (
-                        <>
-                          <br />
-                          Grupo: {zombie.cantidad}
-                        </>
-                      ) : null}
-                      <br />
-                      Estado:{" "}
-                      {zombie.visible === false
-                        ? isDormant ? "dormido, no detectado" : "oculto"
-                        : isDormant ? "dormido" : "detectado"}
-                    </Popup>
-                  </Marker>
-                </Fragment>
-              );
-            })}
+                    {zombie.cantidad ? (
+                      <>
+                        <br />
+                        Grupo: {zombie.cantidad}
+                      </>
+                    ) : null}
+                    <br />
+                    Estado:{" "}
+                    {zombie.visible === false
+                      ? isDormant
+                        ? "dormido, no detectado"
+                        : "oculto"
+                      : isDormant
+                        ? "dormido"
+                        : "detectado"}
+                  </Popup>
+                </Marker>
+              </Fragment>
+            );
+          })}
         {layers.survivors &&
           (world?.sobrevivientes || []).map((survivor) => {
             const position = nodeMap.get(String(survivor.nodo));
@@ -649,7 +728,7 @@ const MantaMap = memo(function MantaMap({
             return (
               <Marker
                 position={position}
-                icon={entityIcon("survivor", "Sobreviviente")}
+                icon={survivorIcon("Sobreviviente")}
                 key={survivor.id}
                 eventHandlers={{ click: () => onSelect(survivor.id) }}
               >

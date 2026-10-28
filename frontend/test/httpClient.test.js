@@ -31,6 +31,21 @@ test("returns an HTTP status and server error detail", async () => {
   await assert.rejects(request("/mover-sobreviviente"), /HTTP 409: Movimiento inválido/);
 });
 
+test("identifies authentication failures separately from other HTTP errors", async () => {
+  const request = createHttpClient({
+    baseUrl: "/api",
+    fetchImpl: async () => ({
+      ok: false,
+      status: 401,
+      json: async () => ({ error: "API key invalida o ausente" }),
+    }),
+  });
+  await assert.rejects(
+    request("/estado"),
+    /Autenticación requerida \(HTTP 401\): API key invalida o ausente/,
+  );
+});
+
 test("keeps the HTTP status code available for endpoint-specific handling", async () => {
   const request = createHttpClient({
     baseUrl: "/api",
