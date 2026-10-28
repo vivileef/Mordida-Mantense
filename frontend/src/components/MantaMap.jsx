@@ -78,43 +78,39 @@ function entityIcon(kind, label) {
   });
 }
 
-function survivorIcon(label = "Sobreviviente") {
+function survivorIcon({ label = "Sobreviviente", selected = false, active = true } = {}) {
+  const accent = active ? "#22E58B" : "#8A9490";
+  const ring = selected ? "#F5C542" : accent;
   return divIcon({
-    className: "",
+    className: `survivor-marker${selected ? " survivor-marker--selected" : ""}${active ? "" : " survivor-marker--inactive"}`,
     html: `
-      <div style="
-        width:48px;
-        height:64px;
-        background:transparent;
-        border:none;
-        box-shadow:none;
-        overflow:visible;
-      ">
+      <div class="survivor-marker__body">
         <svg
           xmlns="http://www.w3.org/2000/svg"
-          width="48"
-          height="64"
+          width="56"
+          height="70"
           viewBox="0 0 48 64"
           role="img"
           aria-label="${label}"
-          style="display:block;background:transparent"
+          style="display:block"
         >
-          <ellipse cx="24" cy="60" rx="13" ry="3" fill="#000" opacity=".25"/>
-          <circle cx="24" cy="12" r="8" fill="#F2C6A0" stroke="#25213D" stroke-width="2"/>
-          <path d="M16 11 Q15 2 24 3 Q33 3 32 12 L29 8 L20 8 Z" fill="#34264F"/>
-          <path d="M17 23 L31 23 L35 42 L29 43 L28 33 L28 48 L20 48 L20 33 L19 43 L13 42 Z"
-            fill="#22E58B" stroke="#25213D" stroke-width="2" stroke-linejoin="round"/>
-          <path d="M17 25 L10 38 L14 41 L22 30 M31 25 L38 36 L34 40 L27 30"
-            fill="none" stroke="#F2C6A0" stroke-width="5" stroke-linecap="round"/>
-          <path d="M20 47 L19 57 L14 58 M28 47 L30 56 L35 58"
-            fill="none" stroke="#29233D" stroke-width="6" stroke-linecap="round"/>
-          <path d="M10 59 L17 59 M31 59 L38 59"
-            stroke="#FF9F1C" stroke-width="5" stroke-linecap="round"/>
+          <ellipse cx="24" cy="60" rx="14" ry="3.5" fill="#000" opacity=".35"/>
+          <circle cx="24" cy="13" r="9" fill="#F2C6A0" stroke="#182124" stroke-width="2"/>
+          <path d="M15 12 Q15 2 24 2 Q34 2 33 12 L29 8 L20 8 Z" fill="#303B38"/>
+          <path d="M18 14h2M28 14h2" stroke="#182124" stroke-width="1.5" stroke-linecap="round"/>
+          <path d="M17 23 L31 23 L35 43 L29 44 L28 34 L28 49 L20 49 L20 34 L19 44 L13 43 Z"
+            fill="${accent}" stroke="#182124" stroke-width="2" stroke-linejoin="round"/>
+          <path d="M31 25 L37 34 L34 38 L28 30" fill="none" stroke="#F2C6A0" stroke-width="5" stroke-linecap="round"/>
+          <path d="M17 25 L10 37 L14 40 L22 30" fill="none" stroke="#F2C6A0" stroke-width="5" stroke-linecap="round"/>
+          <path d="M20 48 L19 57 M28 48 L30 57" fill="none" stroke="#27312F" stroke-width="6" stroke-linecap="round"/>
+          <path d="M13 58h7M29 58h8" stroke="#E4863A" stroke-width="5" stroke-linecap="round"/>
+          <path d="M28 27v10" stroke="#D8F4DE" stroke-width="2" opacity=".8"/>
+          <circle cx="24" cy="13" r="13" fill="none" stroke="${ring}" stroke-width="${selected ? 2 : 1}" opacity="${selected ? 1 : .45}"/>
         </svg>
       </div>
     `,
-    iconSize: [48, 64],
-    iconAnchor: [24, 60],
+    iconSize: [56, 70],
+    iconAnchor: [28, 60],
     popupAnchor: [0, -56],
   });
 }
@@ -901,7 +897,11 @@ const MantaMap = memo(function MantaMap({
             return (
               <Marker
                 position={position}
-                icon={survivorIcon("Sobreviviente")}
+                icon={survivorIcon({
+                  label: `Sobreviviente ${survivor.id}`,
+                  selected: String(selectedId) === String(survivor.id),
+                  active: survivor.activo !== false,
+                })}
                 key={survivor.id}
                 eventHandlers={{ click: () => onSelect(survivor.id) }}
               >
