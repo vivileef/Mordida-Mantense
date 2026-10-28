@@ -13,11 +13,12 @@ import {
 import { center } from "../data/demoWorld";
 import localRoadNetwork from "../data/mantaRoadNetwork.json";
 import {
-  edgeKey,
   resolveRoadMap,
   routeGeometry,
+  streetGeometry,
   uniqueStreetPaths,
 } from "../services/geo";
+import { directedEdgeKey, isDirectedEdgeBlocked } from "../services/roadRouting.js";
 import {
   createDisplayNames,
   displayEntityName,
@@ -153,6 +154,24 @@ function middleOf(path) {
   return [(path[0][0] + path[1][0]) / 2, (path[0][1] + path[1][1]) / 2];
 }
 
+function samePath(first, second) {
+  return first.length === second.length && first.length > 1 && first.every(([lat, lng], index) =>
+    Math.abs(lat - second[index][0]) <= 1e-7 &&
+    Math.abs(lng - second[index][1]) <= 1e-7,
+  );
+}
+
+function streetSelectionKey(street, path) {
+  return `${directedEdgeKey(street.origen, street.destino)}|${JSON.stringify(path)}`;
+}
+
+function directionsForStreet(street, path, streetMap, nodeMap) {
+  const reverse = (streetMap.get(`${street.destino}|${street.origen}`) ?? []).find((candidate) =>
+    samePath(streetGeometry(candidate, nodeMap), [...path].reverse()),
+  );
+  return reverse ? [street, reverse] : [street];
+}
+
 function AnimatedMarker({ position, duration = 2000, ...markerProps }) {
   const [displayPosition, setDisplayPosition] = useState(position);
   const currentPosition = useRef(position);
@@ -215,6 +234,9 @@ const MantaMap = memo(function MantaMap({
   stale = false,
   onRefreshMap,
   routeLookup,
+  onSetStreetBlocked,
+  onResetLocalBlocks,
+  localBlocksActive = false,
 }) {
   const [layers, setLayers] = useState({
     streets: true,
@@ -225,7 +247,14 @@ const MantaMap = memo(function MantaMap({
     routes: true,
     intersections: false,
   });
-  const [selectedStreet, setSelectedStreet] = useState(null);
+  const [blockMode, setBlockMode] = useState(false);
+  const [selectedStreetKey, setSelectedStreetKey] = useState("");
+  const [blockerFeedback, setBlockerFeedback] = useState("");
+  useEffect(() => {
+    setBlockMode(false);
+    setSelectedStreetKey("");
+    setBlockerFeedback("");
+  }, [mode]);
   const resolvedApiMap = useMemo(
     () =>
       mode === "api"
@@ -267,6 +296,29 @@ const MantaMap = memo(function MantaMap({
     [mapWorld?.calles, nodeMap],
   );
   const hasStreetGeometry = streetPaths.length > 0;
+  const blockedEdgeSignature = (world?.aristasBloqueadas || [])
+    .filter((edge) => Array.isArray(edge) && edge.length >= 2)
+    .map((edge) => directedEdgeKey(edge[0], edge[1]))
+    .sort()
+    .join("\u0000");
+  const blockedEdges = useMemo(
+    () => new Set(blockedEdgeSignature ? blockedEdgeSignature.split("\u0000") : []),
+    [blockedEdgeSignature],
+  );
+  const renderedStreetPaths = useMemo(() => streetPaths.map((item) => {
+    const directions = directionsForStreet(item.street, item.path, streetMap, nodeMap);
+    const blockedDirections = directions.filter((street) =>
+      blockedEdges.has(directedEdgeKey(street.origen, street.destino)),
+    );
+    return {
+      ...item,
+      directions,
+      blockedDirections,
+      selectionKey: streetSelectionKey(item.street, item.path),
+    };
+  }), [streetPaths, streetMap, nodeMap, blockedEdges]);
+  const selectedStreet = renderedStreetPaths.find((item) => item.selectionKey === selectedStreetKey);
+  const selectedDirections = selectedStreet?.directions ?? [];
   const routePaths = useMemo(
     () =>
       (world?.rutas || []).map((route) =>
@@ -275,16 +327,6 @@ const MantaMap = memo(function MantaMap({
     [world?.rutas, nodeMap, streetMap],
   );
   const hasRouteGeometry = routePaths.some((path) => path.length > 1);
-  const blockedEdgeSignature = (world?.aristasBloqueadas || [])
-    .filter((edge) => Array.isArray(edge) && edge.length >= 2)
-    .map((edge) => edgeKey(edge[0], edge[1]))
-    .sort()
-    .join("\u0000");
-  const blockedEdges = useMemo(
-    () =>
-      new Set(blockedEdgeSignature ? blockedEdgeSignature.split("\u0000") : []),
-    [blockedEdgeSignature],
-  );
   const mapPositions = useMemo(() => [...nodeMap.values()], [nodeMap]);
   const invalidEntities = useMemo(
     () =>
@@ -392,11 +434,38 @@ const MantaMap = memo(function MantaMap({
       }),
     [world?.rutas, nodeMap, streetMap],
   );
-  const routesWithoutGeometry = (world?.rutas || []).filter(
-    (_, index) => routePaths[index]?.length < 2,
+  const routesWithoutGeometry = (world?.rutas || []).filter((route, index) => {
+    const routeNodes = route.nodes ?? route.nodos ?? [];
+    return routeNodes.length > 0 && routePaths[index]?.length < 2;
+  });
+  const routesUnavailable = (world?.rutas || []).filter(
+    (route) => route.status === "sin_ruta" || route.status === "unavailable",
   );
   const toggleLayer = (layer) =>
     setLayers((current) => ({ ...current, [layer]: !current[layer] }));
+  const selectStreet = (item, event) => {
+    setSelectedStreetKey(item.selectionKey);
+    setBlockerFeedback("");
+    if (blockMode) {
+      event?.originalEvent?.preventDefault?.();
+      event?.originalEvent?.stopPropagation?.();
+    }
+  };
+  const setStreetBlocked = async (street, blocked) => {
+    if (!selectedStreet || !onSetStreetBlocked) {
+      setBlockerFeedback("Selecciona una conexion valida del mapa antes de cambiar su estado.");
+      return;
+    }
+    try {
+      const result = await onSetStreetBlocked(street.origen, street.destino, blocked);
+      setBlockerFeedback(result?.message || (result?.ok ? "Estado de la calle actualizado." : "No se pudo cambiar el estado de la calle."));
+    } catch (error) {
+      setBlockerFeedback(error.message || "No se pudo cambiar el estado de la calle.");
+    }
+  };
+  const selectedParallelCount = selectedStreet
+    ? (streetMap.get(`${selectedStreet.street.origen}|${selectedStreet.street.destino}`) ?? []).length
+    : 0;
   return (
     <section className="map-panel">
       <div className="map-label">
@@ -412,6 +481,14 @@ const MantaMap = memo(function MantaMap({
         </small>
       </div>
       <div className="map-notices" aria-live="polite">
+        {localBlocksActive && (
+          <div className="map-notice map-notice--error">
+            Hay cambios locales de calles y rutas de prueba. No se guardaron en el backend.
+            <button className="map-blocker__clear" type="button" onClick={onResetLocalBlocks}>
+              Restablecer estado API
+            </button>
+          </div>
+        )}
         {(!hasStreetGeometry ||
           (layers.routes &&
             (world?.rutas?.length ?? 0) > 0 &&
@@ -517,7 +594,57 @@ const MantaMap = memo(function MantaMap({
               . Verifica que sus tramos tengan geometría en el mapa.
             </div>
           )}
+        {world?.advertenciasRutasLocales?.map((warning) => (
+          <div className="map-notice map-notice--error" key={warning}>{warning}</div>
+        ))}
+        {world?.advertenciasBloqueosLocales?.map((warning) => (
+          <div className="map-notice map-notice--error" key={warning}>{warning}</div>
+        ))}
+        {routesUnavailable.length > 0 && (
+          <div className="map-notice map-notice--error">
+            Sin ruta disponible para {routesUnavailable
+              .map((route) => displayEntityName(displayNames, "survivors", route.survivorId ?? route.sobrevivienteId, "un sobreviviente"))
+              .join(", ")}.
+          </div>
+        )}
       </div>
+      {blockMode && (
+        <div className="map-blocker" role="status" aria-live="polite">
+          <strong>{mode === "api" ? "Bloqueo local de prueba" : "Modo Bloquear calle"}</strong>
+          {selectedStreet ? (
+            <>
+              <span>{streetDisplayName(selectedStreet.street)}</span>
+              {selectedParallelCount > 1 && (
+                <small>El modelo identifica bloqueos por par de nodos: se afectaran {selectedParallelCount} conexiones paralelas del sentido elegido.</small>
+              )}
+              <div className="map-blocker__directions">
+                {selectedDirections.map((street) => {
+                  const blocked = blockedEdges.has(directedEdgeKey(street.origen, street.destino));
+                  return (
+                    <button
+                      className="button button--secondary"
+                      type="button"
+                      key={directedEdgeKey(street.origen, street.destino)}
+                      onClick={() => setStreetBlocked(street, !blocked)}
+                    >
+                      {blocked ? "Desbloquear" : "Bloquear"} sentido {street.origen} → {street.destino}
+                    </button>
+                  );
+                })}
+              </div>
+            </>
+          ) : (
+            <span>Haz clic en una calle georreferenciada para seleccionar una conexion existente.</span>
+          )}
+          {mode === "api" && (
+            <small>Este escenario es solo local; no modifica ni persiste el estado del backend.</small>
+          )}
+          {blockerFeedback && <span className="map-blocker__feedback">{blockerFeedback}</span>}
+          {selectedStreet && (
+            <button className="map-blocker__clear" type="button" onClick={() => setSelectedStreetKey("")}>Quitar seleccion</button>
+          )}
+        </div>
+      )}
       <div className="map-controls" aria-label="Capas del mapa">
         {[
           ["streets", "Calles"],
@@ -538,6 +665,20 @@ const MantaMap = memo(function MantaMap({
             {layers[layer] ? "●" : "○"} {label}
           </button>
         ))}
+        <button
+          className={blockMode ? "is-visible" : ""}
+          type="button"
+          aria-pressed={blockMode}
+          disabled={!hasStreetGeometry}
+          title={hasStreetGeometry ? "Selecciona una calle y bloquea un sentido" : "El grafo no contiene geometria vial seleccionable"}
+          onClick={() => {
+            setBlockMode(!blockMode);
+            setSelectedStreetKey("");
+            setBlockerFeedback("");
+          }}
+        >
+          {blockMode ? "Salir de bloqueo" : "Bloquear calle"}
+        </button>
         {mode === "api" && (
           <button
             type="button"
@@ -560,27 +701,58 @@ const MantaMap = memo(function MantaMap({
         />
         <RecenterMap />
         <FitWorld positions={mapPositions} />
-        {streetPaths.map(({ street, path, index }) => {
-          const blocked = blockedEdges.has(
-            edgeKey(street.origen, street.destino),
-          );
-          if (blocked ? !layers.blocked : !layers.streets) return null;
+        {renderedStreetPaths.map((item) => {
+          const { street, path, index, directions, blockedDirections, selectionKey } = item;
+          const selected = selectedStreetKey === selectionKey;
+          const blocked = blockedDirections.length === directions.length;
+          const partiallyBlocked = blockedDirections.length > 0 && !blocked;
+          const showOpen = layers.streets;
+          const showBlocked = blockedDirections.length > 0 && layers.blocked;
+          if (!showOpen && !showBlocked) return null;
           if (!path.length) return null;
+          const streetEvents = { click: (event) => selectStreet(item, event) };
           return (
             <Fragment key={`street-${index}`}>
-              <Polyline
-                positions={path}
-                pathOptions={{
-                  color: blocked ? "#FF9F1C" : "#3B2A6B",
-                  weight: selectedStreet === street ? 6 : blocked ? 5 : 2,
-                  dashArray: blocked ? "8 8" : undefined,
-                  opacity:
-                    selectedStreet === street ? 1 : blocked ? 0.95 : 0.75,
-                }}
-                eventHandlers={{ click: () => setSelectedStreet(street) }}
-              >
-                <Tooltip sticky>{streetDisplayName(street)}</Tooltip>
-                <Popup>
+              {showOpen && (
+                <Polyline
+                  positions={path}
+                  pathOptions={{
+                    color: selected ? "#54D6DF" : "#3B2A6B",
+                    weight: selected ? 6 : 2,
+                    opacity: selected ? 1 : 0.75,
+                  }}
+                  eventHandlers={streetEvents}
+                >
+                  <Tooltip sticky>{streetDisplayName(street)}</Tooltip>
+                  {!blockMode && !partiallyBlocked && <Popup>
+                    <b>{streetDisplayName(street)}</b>
+                    <br />
+                    Tipo: {street.tipo || "calle"}
+                    {street.distancia_m ? (
+                      <>
+                        <br />
+                        Distancia: {Math.round(street.distancia_m)} m
+                      </>
+                    ) : null}
+                    <br />
+                    {directions.map((direction) => `${direction.origen} -> ${direction.destino}: ${blockedEdges.has(directedEdgeKey(direction.origen, direction.destino)) ? "bloqueada" : "transitable"}`).join("; ")}
+                    {selected ? " · seleccionada" : ""}
+                  </Popup>}
+                </Polyline>
+              )}
+              {showBlocked && (
+                <Polyline
+                  positions={path}
+                  pathOptions={{
+                    color: selected ? "#FF7B00" : "#FF9F1C",
+                    weight: selected ? 7 : 5,
+                    dashArray: "8 8",
+                    opacity: 0.95,
+                  }}
+                  eventHandlers={streetEvents}
+                >
+                  <Tooltip sticky>{streetDisplayName(street)} · bloqueada</Tooltip>
+                  {!blockMode && <Popup>
                   <b>{streetDisplayName(street)}</b>
                   <br />
                   Tipo: {street.tipo || "calle"}
@@ -591,10 +763,11 @@ const MantaMap = memo(function MantaMap({
                     </>
                   ) : null}
                   <br />
-                  Estado: {blocked ? "bloqueada" : "transitable"}
-                  {selectedStreet === street ? " · seleccionada" : ""}
-                </Popup>
-              </Polyline>
+                  {directions.map((direction) => `${direction.origen} -> ${direction.destino}: ${blockedEdges.has(directedEdgeKey(direction.origen, direction.destino)) ? "bloqueada" : "transitable"}`).join("; ")}
+                  {selected ? " · seleccionada" : ""}
+                  </Popup>}
+                </Polyline>
+              )}
               {blocked && path.length > 1 && (
                 <AnimatedMarker
                   position={middleOf(path)}

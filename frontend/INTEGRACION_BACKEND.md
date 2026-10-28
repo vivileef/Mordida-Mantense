@@ -53,6 +53,26 @@ se descarga en cada sondeo: se carga al entrar al modo API o al pulsar
   vez de confundirlo con una lista vacía. Ninguno de los dos casos se
   interpreta por sí solo como una falla del algoritmo.
 
+## Bloqueo manual y recálculo local
+
+En DEMO, el control **Bloquear calle** cambia el estado del servicio de
+demostración, mantiene el par dirigido de nodos y recalcula las rutas con
+Dijkstra ponderado por `distancia_m`. Solo utiliza conexiones existentes y
+respeta su dirección. El reinicio de DEMO restaura su mundo inicial.
+
+En modo API, el mismo control crea una superposición local para probar el
+bloqueo y el recálculo. No envía solicitudes al backend ni persiste los
+cambios. **Restablecer estado API** descarta las superposiciones y recupera
+el estado publicado por el servidor. Mientras exista una superposición
+compatible con el grafo actual, los controles de avance API quedan
+deshabilitados para no avanzar una simulación que no conoce ese bloqueo.
+
+El modelo actual de bloqueos identifica una calle por `[origen, destino]`.
+Si hay calles paralelas entre el mismo par dirigido, el algoritmo no puede
+bloquear una sola; la interfaz avisa que afectará todas las conexiones
+paralelas de ese sentido. El bloqueo inverso se controla aparte cuando hay
+un arco inverso en el grafo.
+
 ## Ejecución local en PowerShell
 
 Terminal 1, desde la raíz del repositorio, usando el grafo local real y una

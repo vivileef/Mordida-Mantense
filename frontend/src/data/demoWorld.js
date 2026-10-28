@@ -1,4 +1,9 @@
-import roadNetwork from "./mantaRoadNetwork.json";
+import roadNetwork from "./mantaRoadNetwork.json" with { type: "json" };
+import {
+  isDirectedEdgeBlocked,
+  recalculateWorldRoutes,
+  setWorldEdgeBlocked,
+} from "../services/roadRouting.js";
 
 const center = [-0.9675, -80.7075];
 const nodes = roadNetwork.nodos;
@@ -79,84 +84,10 @@ const baseWorld = {
   ],
 };
 
-function claveArista(a, b) {
-  return [a, b].sort().join("|");
-}
-
-function buscarRuta(world, inicio, destino) {
-  if (!inicio || !destino) return [];
-  if (inicio === destino) return [inicio];
-
-  const bloqueadas = new Set(
-    (world.aristasBloqueadas ?? []).map(([a, b]) => claveArista(a, b)),
-  );
-
-  const grafo = new Map((world.nodos ?? []).map((nodo) => [nodo.id, []]));
-
-  for (const calle of world.calles ?? []) {
-    const { origen, destino: fin } = calle;
-
-    if (!grafo.has(origen) || !grafo.has(fin)) continue;
-    if (bloqueadas.has(claveArista(origen, fin))) continue;
-
-    grafo.get(origen).push(fin);
-    grafo.get(fin).push(origen);
-  }
-
-  if (!grafo.has(inicio) || !grafo.has(destino)) return [];
-
-  const pendientes = [[inicio]];
-  const visitados = new Set([inicio]);
-
-  while (pendientes.length > 0) {
-    const ruta = pendientes.shift();
-    const actual = ruta[ruta.length - 1];
-
-    if (actual === destino) return ruta;
-
-    for (const vecino of grafo.get(actual) ?? []) {
-      if (visitados.has(vecino)) continue;
-
-      visitados.add(vecino);
-      pendientes.push([...ruta, vecino]);
-    }
-  }
-
-  return [];
-}
-
 function recalcularRutas(world) {
-  for (const survivor of world.sobrevivientes) {
-    if (!survivor.activo) continue;
-
-    const shelter = world.refugios.find(
-      (item) => item.id === survivor.refugioId,
-    );
-
-    const nodesInRoute = shelter
-      ? buscarRuta(world, survivor.nodo, shelter.nodo)
-      : [];
-
-    const status = nodesInRoute.length > 0 ? "activa" : "invalida";
-
-    const existingRoute = world.rutas.find(
-      (route) => route.survivorId === survivor.id,
-    );
-
-    const updatedRoute = {
-      survivorId: survivor.id,
-      nodes: nodesInRoute,
-      status,
-      updatedAt: `turno ${world.turno}`,
-    };
-
-    if (existingRoute) {
-      Object.assign(existingRoute, updatedRoute);
-    } else {
-      world.rutas.push(updatedRoute);
-    }
-  }
-
+  const recalculated = recalculateWorldRoutes(world);
+  world.rutas = recalculated.rutas;
+  world.advertenciasRutasLocales = recalculated.advertenciasRutasLocales;
   return world;
 }
 
@@ -183,13 +114,9 @@ function bloquearSiguienteTramo(world, survivor) {
   const a = route.nodes[0];
   const b = route.nodes[1];
 
-  const yaBloqueada = world.aristasBloqueadas.some(
-    ([x, y]) => claveArista(x, y) === claveArista(a, b),
-  );
-
-  if (yaBloqueada) return false;
-
-  world.aristasBloqueadas.push([a, b]);
+  const update = setWorldEdgeBlocked(world, a, b, true);
+  if (!update.ok || !update.changed) return false;
+  Object.assign(world, update.world);
 
   agregarEvento(
     world,
@@ -219,25 +146,16 @@ function bloquearSiguienteTramo(world, survivor) {
 }
 
 function moverZombie(world, zombie) {
-  const callesDisponibles = world.calles.filter((calle) => {
-    const conectaConZombie =
-      calle.origen === zombie.nodo || calle.destino === zombie.nodo;
-
-    if (!conectaConZombie) return false;
-
-    const bloqueada = world.aristasBloqueadas.some(
-      ([a, b]) =>
-        claveArista(a, b) === claveArista(calle.origen, calle.destino),
-    );
-
-    return !bloqueada;
-  });
+  const callesDisponibles = world.calles.filter((calle) =>
+    String(calle.origen) === String(zombie.nodo) &&
+    !isDirectedEdgeBlocked(world.aristasBloqueadas, calle.origen, calle.destino),
+  );
 
   if (callesDisponibles.length === 0) return;
 
   const calle = callesDisponibles[(world.turno - 1) % callesDisponibles.length];
 
-  zombie.nodo = calle.origen === zombie.nodo ? calle.destino : calle.origen;
+  zombie.nodo = calle.destino;
 }
 
 export function createDemoWorld() {

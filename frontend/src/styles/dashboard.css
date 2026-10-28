@@ -1881,3 +1881,53 @@ div.survivor-character-wrapper {
   width: 48px !important;
   height: 64px !important;
 }
+
+.map-blocker {
+  position: relative;
+  z-index: 500;
+  display: grid;
+  gap: 8px;
+  max-width: 100%;
+  padding: 12px 14px;
+  border: 1px solid var(--pumpkin);
+  border-radius: 10px;
+  background: #120e2ef2;
+  color: var(--text);
+  box-shadow: 0 0 18px #ff9f1c33;
+}
+
+.map-blocker > strong {
+  color: var(--pumpkin);
+}
+
+.map-blocker small,
+.map-blocker__feedback {
+  color: var(--text-secondary);
+}
+
+.map-blocker__directions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.map-blocker__clear {
+  justify-self: start;
+  padding: 5px 8px;
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.map-controls button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+@media (max-width: 640px) {
+  .map-blocker__directions {
+    display: grid;
+  }
+}

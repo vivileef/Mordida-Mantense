@@ -9,6 +9,14 @@ import SurvivalGuide from "./components/SurvivalGuide";
 import { useWorldState } from "./hooks/useWorldState";
 import { fetchSurvivorRoute, moveSurvivor, requestNextStep } from "./services/simulatorApi";
 import {
+  applyBlockOverrides,
+  directedEdgeKey,
+  hasDirectedConnection,
+  isDirectedEdgeBlocked,
+  recalculateWorldRoutes,
+  updateBlockOverrides,
+} from "./services/roadRouting.js";
+import {
   createDisplayNames,
   displayEntityName,
   intersectionDisplayName,
@@ -19,7 +27,7 @@ export default function App() {
   const [paused, setPaused] = useState(false);
   const [selectedId, setSelectedId] = useState(null);
   const [startedAt] = useState(Date.now());
-  const { world, connection, error, lastUpdated, reset, refresh, refreshMap, loadScenario, advanceTurn, pollInterval } =
+  const { world, connection, error, lastUpdated, reset, refresh, refreshMap, loadScenario, advanceTurn, setDemoBlockedEdge, pollInterval } =
     useWorldState({ demo: mode === "demo", paused });
   const [elapsed, setElapsed] = useState("00:00");
   const [guideOpen, setGuideOpen] = useState(false);
@@ -28,7 +36,29 @@ export default function App() {
   const [stepLoading, setStepLoading] = useState(false);
   const [stepFeedback, setStepFeedback] = useState("");
   const [routeLookup, setRouteLookup] = useState({ key: "", status: "idle", route: null, error: "" });
+  const [apiBlockOverrides, setApiBlockOverrides] = useState([]);
+  const [apiLocalRouting, setApiLocalRouting] = useState(false);
   const stale = mode === "api" && lastUpdated && Date.now() - lastUpdated.getTime() > pollInterval * 3;
+  const validApiBlockOverrides = useMemo(
+    () => (apiBlockOverrides ?? []).filter((edge) =>
+      hasDirectedConnection(world, edge.origen, edge.destino),
+    ),
+    [world?.nodos, world?.calles, apiBlockOverrides],
+  );
+  const invalidApiOverrideCount = apiBlockOverrides.length - validApiBlockOverrides.length;
+  const activeWorld = useMemo(() => {
+    if (mode !== "api" || !world || !apiLocalRouting) return world;
+    const blockedEdges = applyBlockOverrides(world.aristasBloqueadas, validApiBlockOverrides);
+    const recalculated = recalculateWorldRoutes({ ...world, aristasBloqueadas: blockedEdges }, blockedEdges);
+    return {
+      ...recalculated,
+      bloqueosLocalesActivos: true,
+      rutasCalculadasLocalmente: true,
+      advertenciasBloqueosLocales: invalidApiOverrideCount
+        ? [`${invalidApiOverrideCount} bloqueo(s) local(es) omitidos porque ya no existen en el grafo API actual.`]
+        : [],
+    };
+  }, [mode, world, apiLocalRouting, validApiBlockOverrides, invalidApiOverrideCount]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -41,12 +71,14 @@ export default function App() {
   const switchMode = (nextMode) => {
     setPaused(false);
     setStepFeedback("");
+    setApiBlockOverrides([]);
+    setApiLocalRouting(false);
     setMode(nextMode);
   };
 
   useEffect(() => {
-    const survivors = world?.sobrevivientes ?? [];
-    const routes = world?.rutas ?? [];
+    const survivors = activeWorld?.sobrevivientes ?? [];
+    const routes = activeWorld?.rutas ?? [];
     const survivorIds = new Set(survivors.map((survivor) => String(survivor.id)));
     const routeIds = routes
       .map((route) => route.survivorId ?? route.sobrevivienteId)
@@ -64,42 +96,42 @@ export default function App() {
       survivors.find((survivor) => survivor.activo !== false)?.id ??
       survivors[0]?.id ?? routeIds[0] ?? null;
     setSelectedId(nextId == null ? null : String(nextId));
-  }, [world, selectedId]);
+  }, [activeWorld, selectedId]);
 
   const routeFromState = useMemo(
-    () => world?.rutas?.find(
+    () => activeWorld?.rutas?.find(
       (route) => String(route.survivorId ?? route.sobrevivienteId ?? "") === selectedId,
     ),
-    [world, selectedId],
+    [activeWorld, selectedId],
   );
-  const displayNames = useMemo(() => createDisplayNames(world), [
-    world?.zombies,
-    world?.sobrevivientes,
-    world?.refugios,
+  const displayNames = useMemo(() => createDisplayNames(activeWorld), [
+    activeWorld?.zombies,
+    activeWorld?.sobrevivientes,
+    activeWorld?.refugios,
   ]);
   const selectedSurvivor = useMemo(
-    () => world?.sobrevivientes?.find((item) => String(item.id) === String(selectedId)),
-    [world?.sobrevivientes, selectedId],
+    () => activeWorld?.sobrevivientes?.find((item) => String(item.id) === String(selectedId)),
+    [activeWorld?.sobrevivientes, selectedId],
   );
   const routeStateKey = useMemo(() => {
-    if (!world || !selectedSurvivor) return "";
-    const zombieState = (world.zombies ?? []).map((zombie) => [
+    if (!activeWorld || !selectedSurvivor) return "";
+    const zombieState = (activeWorld.zombies ?? []).map((zombie) => [
       zombie.id,
       zombie.nodo,
       zombie.tipo,
       zombie.visible,
       zombie.cantidad,
     ]);
-    const refugeState = (world.refugios ?? []).map((refuge) => [
+    const refugeState = (activeWorld.refugios ?? []).map((refuge) => [
       refuge.id,
       refuge.nodo ?? refuge.node,
     ]);
-    const blockedEdges = (world.aristasBloqueadas ?? [])
+    const blockedEdges = (activeWorld.aristasBloqueadas ?? [])
       .filter((edge) => Array.isArray(edge) && edge.length >= 2)
-      .map((edge) => [String(edge[0]), String(edge[1])].sort().join("|"))
+      .map((edge) => directedEdgeKey(edge[0], edge[1]))
       .sort();
     return JSON.stringify([
-      world.turno,
+      activeWorld.turno,
       selectedSurvivor.id,
       selectedSurvivor.nodo,
       selectedSurvivor.refugioId,
@@ -108,7 +140,7 @@ export default function App() {
       refugeState,
       blockedEdges,
     ]);
-  }, [world?.turno, world?.zombies, world?.aristasBloqueadas, selectedSurvivor]);
+  }, [activeWorld?.turno, activeWorld?.zombies, activeWorld?.aristasBloqueadas, selectedSurvivor]);
   useEffect(() => {
     let current = true;
     if (mode !== "api" || !selectedSurvivor || !routeStateKey) {
@@ -141,23 +173,51 @@ export default function App() {
     routeLookup.key === routeStateKey ? routeLookup.route : null
   );
   const displayWorld = useMemo(() => {
-    if (!world || !selectedRoute) return world;
-    const routes = world.rutas ?? [];
+    if (!activeWorld || !selectedRoute) return activeWorld;
+    const routes = activeWorld.rutas ?? [];
     const routeId = String(selectedRoute.survivorId ?? selectedRoute.sobrevivienteId ?? "");
     if (routes.some((route) => String(route.survivorId ?? route.sobrevivienteId ?? "") === routeId)) {
-      return world;
+      return activeWorld;
     }
-    return { ...world, rutas: [...routes, selectedRoute] };
-  }, [world, selectedRoute]);
+    return { ...activeWorld, rutas: [...routes, selectedRoute] };
+  }, [activeWorld, selectedRoute]);
   const visibleRouteLookup = routeLookup.key === routeStateKey ? routeLookup : null;
   const selectedNode = useMemo(
-    () => world?.nodos?.find((node) => String(node.id) === String(selectedSurvivor?.nodo)),
-    [world?.nodos, selectedSurvivor?.nodo],
+    () => activeWorld?.nodos?.find((node) => String(node.id) === String(selectedSurvivor?.nodo)),
+    [activeWorld?.nodos, selectedSurvivor?.nodo],
   );
+
+  const handleSetStreetBlocked = (origin, destination, blocked) => {
+    if (mode === "demo") {
+      const result = setDemoBlockedEdge(origin, destination, blocked);
+      setStepFeedback(result.message);
+      return result;
+    }
+    if (!world) return { ok: false, message: "El mapa API todavia no esta disponible." };
+    const result = updateBlockOverrides(world, apiBlockOverrides, origin, destination, blocked);
+    if (!result.ok) {
+      return { ok: false, message: "La conexion seleccionada ya no existe en el grafo API recibido." };
+    }
+    setApiBlockOverrides(result.overrides);
+    setApiLocalRouting(true);
+    const message = result.changed
+      ? `Bloqueo local ${blocked ? "aplicado" : "quitado"} en ${origin} -> ${destination}; rutas recalculadas en el navegador. No se guarda en el backend.`
+      : "La conexion ya tenia ese estado.";
+    setStepFeedback(message);
+    return { ...result, message };
+  };
+
+  const handleResetApiLocalBlocks = () => {
+    setApiBlockOverrides([]);
+    setApiLocalRouting(false);
+    setStepFeedback("Se quitaron los cambios de prueba locales; se conserva el estado recibido del backend.");
+  };
 
   const handleLoadScenario = async (scenario) => {
     setScenarioLoading(true);
     setStepFeedback("");
+    setApiBlockOverrides([]);
+    setApiLocalRouting(false);
     try {
       await loadScenario(scenario);
     } finally {
@@ -166,6 +226,10 @@ export default function App() {
   };
 
   const handleAdvanceTurn = async () => {
+    if (mode === "api" && validApiBlockOverrides.length > 0) {
+      setStepFeedback("Quita o reinicia los bloqueos locales antes de avanzar el turno del backend.");
+      return;
+    }
     setTurnLoading(true);
     setStepFeedback("");
     try {
@@ -180,13 +244,17 @@ export default function App() {
 
   const handleAdvanceSelectedSurvivor = async () => {
     if (mode !== "api" || !selectedSurvivor?.activo || stepLoading) return;
+    if (validApiBlockOverrides.length > 0) {
+      setStepFeedback("Los bloqueos locales no se envian al backend. Quita o reinicia esos bloqueos antes de mover al sobreviviente.");
+      return;
+    }
     setStepLoading(true);
     setStepFeedback("");
     try {
       const response = await requestNextStep({
         sobrevivienteId: String(selectedSurvivor.id),
         nodoActual: String(selectedSurvivor.nodo),
-        turno: Number(world.turno) || 0,
+        turno: Number(activeWorld.turno) || 0,
       });
       const destination = response?.siguienteNodo == null ? "" : String(response.siguienteNodo);
       if (!destination || destination === String(selectedSurvivor.nodo)) {
@@ -194,15 +262,11 @@ export default function App() {
         return;
       }
 
-      const nodeExists = world.nodos?.some((node) => String(node.id) === destination);
-      const connected = world.calles?.some((street) =>
+      const nodeExists = activeWorld.nodos?.some((node) => String(node.id) === destination);
+      const connected = activeWorld.calles?.some((street) =>
         String(street.origen) === String(selectedSurvivor.nodo) && String(street.destino) === destination,
       );
-      const blocked = world.aristasBloqueadas?.some((edge) =>
-        Array.isArray(edge) && edge.length >= 2 &&
-        ((String(edge[0]) === String(selectedSurvivor.nodo) && String(edge[1]) === destination) ||
-          (String(edge[1]) === String(selectedSurvivor.nodo) && String(edge[0]) === destination)),
-      );
+      const blocked = isDirectedEdgeBlocked(activeWorld.aristasBloqueadas, selectedSurvivor.nodo, destination);
       if (!nodeExists || !connected || blocked) {
         setStepFeedback("El backend devolvió un paso que no coincide con una conexión del mapa. No se confirmó el movimiento.");
         return;
@@ -277,10 +341,11 @@ export default function App() {
             onAdvanceTurn={handleAdvanceTurn}
             turnLoading={turnLoading}
             connection={connection}
+            localBlocksActive={mode === "api" && validApiBlockOverrides.length > 0}
           />
           <button className="button button--guide" type="button" onClick={() => setGuideOpen(true)}>Guía de supervivencia</button>
         </div>
-        <StatsPanel world={world} />
+        <StatsPanel world={activeWorld} />
         <div className="workspace">
           <MantaMap
             world={displayWorld}
@@ -292,17 +357,20 @@ export default function App() {
             stale={stale}
             onRefreshMap={refreshMap}
             routeLookup={visibleRouteLookup}
+            onSetStreetBlocked={handleSetStreetBlocked}
+            onResetLocalBlocks={handleResetApiLocalBlocks}
+            localBlocksActive={mode === "api" && validApiBlockOverrides.length > 0}
           />
           <aside className="side-column">
             <RoutePanel world={displayWorld} selectedId={selectedId} onSelect={setSelectedId} mode={mode} routeLookup={visibleRouteLookup} />
-            <EventLog events={world.eventos} scheduledEvents={world.eventosProgramados} world={world} />
+            <EventLog events={activeWorld.eventos} scheduledEvents={activeWorld.eventosProgramados} world={activeWorld} />
           </aside>
         </div>
         {(selectedRoute || (mode === "api" && selectedSurvivor)) && (
           <div className="route-detail" aria-label="Detalle del sobreviviente seleccionado">
             <span>DETALLE DEL SOBREVIVIENTE</span>
             <strong>{displayEntityName(displayNames, "survivors", selectedId, "Sobreviviente")}</strong>
-            <span>INTERSECCIÓN ACTUAL <b>{selectedNode ? intersectionDisplayName(selectedNode, world.calles) : "Ubicación no disponible"}</b></span>
+            <span>INTERSECCIÓN ACTUAL <b>{selectedNode ? intersectionDisplayName(selectedNode, activeWorld.calles) : "Ubicación no disponible"}</b></span>
             <span>DESTINO <b>{displayEntityName(displayNames, "shelters", selectedSurvivor?.refugioId, "Refugio")}</b></span>
             <span>RUTA <b>{selectedRoute ? `${selectedRoute.nodes?.length ?? selectedRoute.nodos?.length ?? 0} intersecciones` : "Sin ruta publicada actualmente"}</b></span>
             <span>ESTADO <b>{selectedRoute?.status?.toUpperCase() || (selectedSurvivor?.activo ? "ACTIVO" : "INACTIVO")}</b></span>

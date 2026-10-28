@@ -19,7 +19,11 @@ const RoutePanel = memo(function RoutePanel({ world, selectedId, onSelect, mode 
     () => new Map((world?.nodos || []).map((item) => [String(item.id), item])),
     [world?.nodos],
   );
-  const sourceDescription = mode === 'demo'
+  const sourceDescription = world?.rutasCalculadasLocalmente
+    ? mode === 'api'
+      ? 'Rutas recalculadas localmente para probar bloqueos; no se envian al backend.'
+      : 'Rutas simuladas sobre las geometrias viales disponibles.'
+    : mode === 'demo'
     ? 'Rutas simuladas sobre las geometrías viales disponibles.'
     : routes.length
       ? 'Rutas entregadas por el backend; solo se dibujan con geometría vial compatible.'
@@ -50,9 +54,12 @@ const RoutePanel = memo(function RoutePanel({ world, selectedId, onSelect, mode 
           const currentNode = nodesById.get(String(currentNodeId));
           const nextNode = nodesById.get(String(nextNodeId));
           const destinationId = route.refugeId ?? route.refugioId ?? survivor?.refugioId;
-          const invalid = route.status === 'invalida' || route.status === 'invalid';
-          const routeStatus = route.status == null
-            ? 'PUBLICADA'
+          const noRoute = route.status === 'sin_ruta' || route.status === 'unavailable';
+          const invalid = noRoute || route.status === 'invalida' || route.status === 'invalid';
+          const routeStatus = noRoute
+            ? 'SIN RUTA DISPONIBLE'
+            : route.status == null
+              ? 'PUBLICADA'
             : invalid
               ? 'INVALIDADA'
               : String(route.status).toLocaleUpperCase('es-EC');
