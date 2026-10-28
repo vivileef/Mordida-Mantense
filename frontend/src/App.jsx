@@ -165,7 +165,8 @@ export default function App() {
       })
       .catch((routeError) => {
         if (!current) return;
-        setRouteLookup({ key: routeStateKey, status: "error", route: null, error: routeError.message });
+        console.error("No se pudo consultar la ruta.", routeError);
+        setRouteLookup({ key: routeStateKey, status: "error", route: null, error: "" });
       });
     return () => { current = false; };
   }, [mode, selectedId, selectedSurvivor?.id, routeStateKey, routeFromState]);
@@ -201,7 +202,7 @@ export default function App() {
     setApiBlockOverrides(result.overrides);
     setApiLocalRouting(true);
     const message = result.changed
-      ? `Bloqueo local ${blocked ? "aplicado" : "quitado"} en ${origin} -> ${destination}; rutas recalculadas en el navegador. No se guarda en el backend.`
+      ? `Bloqueo local ${blocked ? "aplicado" : "quitado"}; rutas recalculadas.`
       : "La conexion ya tenia ese estado.";
     setStepFeedback(message);
     return { ...result, message };
@@ -210,7 +211,7 @@ export default function App() {
   const handleResetApiLocalBlocks = () => {
     setApiBlockOverrides([]);
     setApiLocalRouting(false);
-    setStepFeedback("Se quitaron los cambios de prueba locales; se conserva el estado recibido del backend.");
+    setStepFeedback("Se quitaron los cambios de prueba locales.");
   };
 
   const handleLoadScenario = async (scenario) => {
@@ -227,7 +228,7 @@ export default function App() {
 
   const handleAdvanceTurn = async () => {
     if (mode === "api" && validApiBlockOverrides.length > 0) {
-      setStepFeedback("Quita o reinicia los bloqueos locales antes de avanzar el turno del backend.");
+      setStepFeedback("Quita o reinicia los bloqueos locales antes de avanzar el turno.");
       return;
     }
     setTurnLoading(true);
@@ -235,7 +236,7 @@ export default function App() {
     try {
       const updated = await advanceTurn();
       setStepFeedback(updated
-        ? "Turno avanzado; estado, rutas y eventos actualizados desde el backend."
+        ? "Turno avanzado; estado, rutas y eventos actualizados."
         : "No se pudo avanzar el turno. Revisa el estado de conexión y vuelve a intentarlo.");
     } finally {
       setTurnLoading(false);
@@ -245,7 +246,7 @@ export default function App() {
   const handleAdvanceSelectedSurvivor = async () => {
     if (mode !== "api" || !selectedSurvivor?.activo || stepLoading) return;
     if (validApiBlockOverrides.length > 0) {
-      setStepFeedback("Los bloqueos locales no se envian al backend. Quita o reinicia esos bloqueos antes de mover al sobreviviente.");
+      setStepFeedback("Quita o reinicia los bloqueos locales antes de mover al sobreviviente.");
       return;
     }
     setStepLoading(true);
@@ -258,7 +259,7 @@ export default function App() {
       });
       const destination = response?.siguienteNodo == null ? "" : String(response.siguienteNodo);
       if (!destination || destination === String(selectedSurvivor.nodo)) {
-        setStepFeedback("El backend no indicó un siguiente paso seguro para este sobreviviente.");
+        setStepFeedback("No hay un siguiente paso seguro para este sobreviviente.");
         return;
       }
 
@@ -268,7 +269,7 @@ export default function App() {
       );
       const blocked = isDirectedEdgeBlocked(activeWorld.aristasBloqueadas, selectedSurvivor.nodo, destination);
       if (!nodeExists || !connected || blocked) {
-        setStepFeedback("El backend devolvió un paso que no coincide con una conexión del mapa. No se confirmó el movimiento.");
+        setStepFeedback("El siguiente paso no coincide con una conexión del mapa. No se realizó el movimiento.");
         return;
       }
 
@@ -277,14 +278,15 @@ export default function App() {
         nodoDestino: destination,
       });
       if (result?.movido !== true) {
-        setStepFeedback("El backend rechazó el movimiento. Actualiza el estado antes de volver a intentarlo.");
+        setStepFeedback("No se pudo realizar el movimiento. Actualiza los datos e inténtalo de nuevo.");
         await refresh();
         return;
       }
-      setStepFeedback("Movimiento confirmado por el backend.");
+      setStepFeedback("Movimiento confirmado.");
       await refresh();
     } catch (stepError) {
-      setStepFeedback(stepError.message || "No se pudo completar el paso solicitado.");
+      console.error("No se pudo completar el movimiento.", stepError);
+      setStepFeedback("No se pudo completar el movimiento. Inténtalo de nuevo.");
     } finally {
       setStepLoading(false);
     }
@@ -294,7 +296,7 @@ export default function App() {
     return (
       <main className="loading-screen" aria-live="polite">
         <div className="logo-slot">LOGO</div>
-        <h1>{error ? "Backend no disponible" : "Inicializando centro de operaciones"}</h1>
+        <h1>{error ? "No se pudo conectar" : "Inicializando centro de operaciones"}</h1>
         <p>{error || "Sincronizando estado del mundo…"}</p>
         <button className="button button--primary" type="button" onClick={refresh}>Reintentar conexión</button>
         {mode === "api" && (

@@ -456,7 +456,8 @@ const MantaMap = memo(function MantaMap({
       const result = await onSetStreetBlocked(street.origen, street.destino, blocked);
       setBlockerFeedback(result?.message || (result?.ok ? "Estado de la calle actualizado." : "No se pudo cambiar el estado de la calle."));
     } catch (error) {
-      setBlockerFeedback(error.message || "No se pudo cambiar el estado de la calle.");
+      console.error("No se pudo cambiar el estado de la calle.", error);
+      setBlockerFeedback("No se pudo cambiar el estado de la calle. Inténtalo de nuevo.");
     }
   };
   const selectedParallelCount = selectedStreet
@@ -470,8 +471,8 @@ const MantaMap = memo(function MantaMap({
           {mode === "demo"
             ? "POSICIONES DEMO"
             : connection === "connected"
-              ? "DATOS DEL SERVIDOR"
-              : "DATOS API DESCONECTADOS"}
+              ? "CONEXIÓN ESTABLECIDA"
+              : "DESCONECTADO"}
           {lastUpdated ? ` · ${lastUpdated.toLocaleTimeString("es-EC")}` : ""}
           {stale ? " · DESACTUALIZADOS" : ""}
         </small>
@@ -506,8 +507,8 @@ const MantaMap = memo(function MantaMap({
                   : routeLookup?.status === "unavailable"
                     ? "El backend no encontró una ruta segura para el sobreviviente seleccionado."
                     : routeLookup?.status === "error"
-                      ? `No se pudo consultar la ruta: ${routeLookup.error}`
-                      : "GET /estado no incluye una lista de rutas; se consulta GET /ruta para la persona seleccionada."
+                      ? "No se pudo consultar la ruta. Inténtalo de nuevo más tarde."
+                      : "No hay rutas disponibles para mostrar en este momento."
                 : "No hay rutas publicadas en este estado."}
             </div>
           )}
@@ -523,7 +524,7 @@ const MantaMap = memo(function MantaMap({
         {mode === "api" &&
           world?.camposEstadoAusentes?.includes("refugios") && (
             <div className="map-notice">
-              GET /estado no incluye el campo refugios.
+              No hay información de refugios disponible.
             </div>
           )}
         {mode === "api" &&
@@ -557,19 +558,12 @@ const MantaMap = memo(function MantaMap({
         )}
         {roadMapWarnings.length > 0 && (
           <div className="map-notice map-notice--error">
-            Compatibilidad de la red API: {roadMapWarnings.join(" ")}
+            No se pudo cargar toda la información del mapa.
           </div>
         )}
         {routeDiagnostics.length > 0 && (
           <div className="map-notice map-notice--error">
-            Rutas incompletas:{" "}
-            {routeDiagnostics
-              .map(
-                ({ routeId, message }) =>
-                  `${displayEntityName(displayNames, "survivors", routeId, "Sobreviviente")}: ${message}`,
-              )
-              .join("; ")}
-            .
+            No se pudieron mostrar todas las rutas.
           </div>
         )}
         {layers.routes &&
@@ -590,12 +584,9 @@ const MantaMap = memo(function MantaMap({
               . Verifica que sus tramos tengan geometría en el mapa.
             </div>
           )}
-        {world?.advertenciasRutasLocales?.map((warning) => (
-          <div className="map-notice map-notice--error" key={warning}>{warning}</div>
-        ))}
-        {world?.advertenciasBloqueosLocales?.map((warning) => (
-          <div className="map-notice map-notice--error" key={warning}>{warning}</div>
-        ))}
+        {(world?.advertenciasRutasLocales?.length > 0 || world?.advertenciasBloqueosLocales?.length > 0) && (
+          <div className="map-notice map-notice--error">Algunos cambios de prueba no pudieron aplicarse.</div>
+        )}
         {routesUnavailable.length > 0 && (
           <div className="map-notice map-notice--error">
             Sin ruta disponible para {routesUnavailable
@@ -606,7 +597,7 @@ const MantaMap = memo(function MantaMap({
       </div>
       {blockMode && (
         <div className="map-blocker" role="status" aria-live="polite">
-          <strong>{mode === "api" ? "Bloqueo local de prueba" : "Modo Bloquear calle"}</strong>
+          <strong>{mode === "api" ? "Bloqueo de calle" : "Modo Bloquear calle"}</strong>
           {selectedStreet ? (
             <>
               <span>{streetDisplayName(selectedStreet.street)}</span>
@@ -632,9 +623,7 @@ const MantaMap = memo(function MantaMap({
           ) : (
             <span>Haz clic en una calle georreferenciada para seleccionar una conexion existente.</span>
           )}
-          {mode === "api" && (
-            <small>Este escenario es solo local; no modifica ni persiste el estado del backend.</small>
-          )}
+
           {blockerFeedback && <span className="map-blocker__feedback">{blockerFeedback}</span>}
           {selectedStreet && (
             <button className="map-blocker__clear" type="button" onClick={() => setSelectedStreetKey("")}>Quitar seleccion</button>

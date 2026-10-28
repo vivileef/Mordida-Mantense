@@ -43,7 +43,8 @@ export function useWorldState({ demo = configuredMode === "demo", paused = false
     } catch (loadError) {
       if (!mounted.current || sourceVersion.current !== version) return;
       setConnection("error");
-      setError(loadError.message);
+      console.error("No se pudo cargar el estado de simulación.", loadError);
+      setError("No se pudieron actualizar los datos. Inténtalo de nuevo.");
     } finally {
       inFlightCount.current = Math.max(0, inFlightCount.current - 1);
     }
@@ -97,7 +98,8 @@ export function useWorldState({ demo = configuredMode === "demo", paused = false
     } catch (loadError) {
       if (mounted.current && sourceVersion.current === version) {
         setConnection("error");
-        setError(loadError.message);
+        console.error("No se pudo actualizar el mapa.", loadError);
+        setError("No se pudieron actualizar los datos. Inténtalo de nuevo.");
       }
       return false;
     } finally {
@@ -123,7 +125,8 @@ export function useWorldState({ demo = configuredMode === "demo", paused = false
     } catch (loadError) {
       if (mounted.current && sourceVersion.current === version) {
         setConnection("error");
-        setError(loadError.message);
+        console.error("No se pudo cargar el escenario.", loadError);
+        setError("No se pudo completar la acción. Inténtalo de nuevo.");
       }
       return false;
     } finally {
@@ -151,7 +154,8 @@ export function useWorldState({ demo = configuredMode === "demo", paused = false
     } catch (loadError) {
       if (mounted.current && sourceVersion.current === version) {
         setConnection("error");
-        setError(loadError.message);
+        console.error("No se pudo avanzar el turno.", loadError);
+        setError("No se pudo completar la acción. Inténtalo de nuevo.");
       }
       return false;
     } finally {
@@ -191,7 +195,8 @@ export function useWorldState({ demo = configuredMode === "demo", paused = false
       } catch (loadError) {
         if (!isCurrent()) return;
         setConnection("error");
-        setError(loadError.message);
+        console.error("No se pudo iniciar la simulación.", loadError);
+        setError("No se pudieron cargar los datos. Inténtalo de nuevo.");
       } finally {
         inFlightCount.current = Math.max(0, inFlightCount.current - 1);
       }
@@ -214,7 +219,7 @@ export function useWorldState({ demo = configuredMode === "demo", paused = false
   return {
     world,
     connection: demo ? "connected" : (apiConfigured ? connection : "error"),
-    error: demo ? "" : error || (!apiConfigured ? "Configura VITE_API_BASE_URL para conectar con el backend." : ""),
+    error: demo ? "" : error || (!apiConfigured ? "No se pudo establecer la conexión. Inténtalo más tarde." : ""),
     lastUpdated,
     reset,
     setDemoBlockedEdge,

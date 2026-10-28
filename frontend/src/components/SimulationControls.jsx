@@ -30,7 +30,7 @@ export default function SimulationControls({
           ? "Los movimientos son ficticios y se actualizan cada 2 s."
           : localBlocksActive
             ? "Hay cambios de prueba locales; restablecelos antes de avanzar el estado real del servidor."
-            : "El estado se actualiza periódicamente. El servidor avanza automáticamente; este control solicita un turno manual."}
+            : "El estado se actualiza periódicamente."}
       </div>
       <div className="control-strip__buttons">
         {mode === "demo" ? (

@@ -26,15 +26,15 @@ const RoutePanel = memo(function RoutePanel({ world, selectedId, onSelect, mode 
     : mode === 'demo'
     ? 'Rutas simuladas sobre las geometrías viales disponibles.'
     : routes.length
-      ? 'Rutas entregadas por el backend; solo se dibujan con geometría vial compatible.'
+      ? 'Rutas publicadas; solo se dibujan con geometría vial compatible.'
       : routeLookup?.status === 'loading'
-        ? 'Consultando la ruta del sobreviviente seleccionado en el backend.'
+        ? 'Consultando la ruta del sobreviviente seleccionado.'
         : routeLookup?.status === 'unavailable'
-          ? 'El backend no encontró una ruta segura para el sobreviviente seleccionado.'
+          ? 'No se encontró una ruta segura para el sobreviviente seleccionado.'
           : routeLookup?.status === 'error'
-            ? `No se pudo consultar la ruta del backend: ${routeLookup.error}`
+            ? 'No se pudo consultar la ruta. Inténtalo de nuevo más tarde.'
             : world?.camposEstadoAusentes?.includes('rutas')
-              ? 'GET /estado no incluye una lista de rutas; se consulta GET /ruta para la persona seleccionada.'
+              ? 'No hay rutas disponibles para mostrar en este momento.'
               : 'No hay rutas publicadas para este estado.';
 
   return (
