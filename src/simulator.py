@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import logging
 import random
 from collections import deque
 
 from .graph import CityGraph
 from .model import WorldState, Zombie, ZombieType
+
+
+logger = logging.getLogger(__name__)
 
 
 class ApocalypseSimulator:
@@ -33,13 +37,23 @@ class ApocalypseSimulator:
     def _apply_scheduled_events(self) -> None:
         for event in self.world.scheduled_events:
             if event.turn == self.world.turn and event not in self.world.events:
-                self.block_edge(*event.edge)
-                self.world.events.append(event)
+                if self.block_edge(*event.edge):
+                    self.world.events.append(event)
+                else:
+                    logger.error(
+                        "No se aplicó el evento %s del turno %s: la calle %s<->%s no existe en el grafo cargado",
+                        event.event_type,
+                        event.turn,
+                        *event.edge,
+                    )
 
-    def block_edge(self, source: str, target: str) -> None:
-        """Registra un evento de ciudad que cierra una calle en ambos sentidos."""
+    def block_edge(self, source: str, target: str) -> bool:
+        """Cierra una calle en ambos sentidos; indica si existe en el grafo."""
         if self.graph.has_edge(source, target):
             self.world.blocked_edges.add((source, target))
+            return True
+        logger.warning("No se cerró la calle %s<->%s: no existe en el grafo cargado", source, target)
+        return False
 
     def move_survivor(self, survivor_id: str, target: str) -> bool:
         """Registra un movimiento ya decidido y valida que use una calle abierta."""
