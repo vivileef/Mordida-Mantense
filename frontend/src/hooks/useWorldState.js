@@ -64,6 +64,23 @@ export function useWorldState({ demo = configuredMode === "demo", paused = false
     }
   }, [demo]);
 
+  const setDemoBlockedEdge = useCallback((origin, destination, blocked) => {
+    if (!demo || activeSource.current !== demo) {
+      return { ok: false, changed: false, message: "El modo de demostracion ya no esta activo." };
+    }
+    const result = demoService.current.setBlockedEdge(origin, destination, blocked);
+    if (!result.ok) {
+      return { ...result, message: "La conexion seleccionada no existe en la red DEMO." };
+    }
+    if (result.changed) {
+      setWorld(result.world);
+      setLastUpdated(new Date());
+      setConnection("connected");
+      setError("");
+    }
+    return { ...result, message: result.changed ? "Bloqueo DEMO actualizado; rutas recalculadas." : "La conexion ya tenia ese estado." };
+  }, [demo]);
+
   const refreshMap = useCallback(async () => {
     if (demo || inFlightCount.current > 0 || activeSource.current !== demo) return false;
     const version = sourceVersion.current;
@@ -200,6 +217,7 @@ export function useWorldState({ demo = configuredMode === "demo", paused = false
     error: demo ? "" : error || (!apiConfigured ? "Configura VITE_API_BASE_URL para conectar con el backend." : ""),
     lastUpdated,
     reset,
+    setDemoBlockedEdge,
     refresh: load,
     refreshMap,
     loadScenario,

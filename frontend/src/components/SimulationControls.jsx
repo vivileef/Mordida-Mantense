@@ -12,6 +12,7 @@ export default function SimulationControls({
   onAdvanceTurn,
   turnLoading = false,
   connection = "connecting",
+  localBlocksActive = false,
 }) {
   const [scenario, setScenario] = useState("ronda1");
 
@@ -27,7 +28,9 @@ export default function SimulationControls({
       <div className="control-strip__help">
         {mode === "demo"
           ? "Los movimientos son ficticios y se actualizan cada 2 s."
-          : "El estado se actualiza periódicamente. El servidor avanza automáticamente; este control solicita un turno manual."}
+          : localBlocksActive
+            ? "Hay cambios de prueba locales; restablecelos antes de avanzar el estado real del servidor."
+            : "El estado se actualiza periódicamente. El servidor avanza automáticamente; este control solicita un turno manual."}
       </div>
       <div className="control-strip__buttons">
         {mode === "demo" ? (
